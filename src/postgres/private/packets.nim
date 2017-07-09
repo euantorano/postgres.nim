@@ -332,6 +332,19 @@ proc queryMessageToString(m: PostgresMessage, dest: var string) {.inline.} =
 
   dest = $buff
 
+proc initTerminateMessage*(): PostgresMessage =
+  result = PostgresMessage(
+    isBackend: false,
+    frontEndMessageType: FrontEndMessageType.Terminate
+  )
+
+proc terminateMessageToString(m: PostgresMessage, dest: var string) {.inline.} =
+  var buff = initBuffer(5)
+  buff.writeByte(char(FrontEndMessageType.Terminate))
+  buff.writeint32(4)
+
+  dest = $buff
+
 proc `$`*(m: PostgresMessage): string =
   if not m.isBackend:
     case m.frontEndMessageType
@@ -339,6 +352,8 @@ proc `$`*(m: PostgresMessage): string =
       startupMessageToString(m, result)
     of FrontEndMessageType.Query:
       queryMessageToString(m, result)
+    of FrontEndMessageType.Terminate:
+      terminateMessageToString(m, result)
     else:
       result = ""
   else:

@@ -42,9 +42,14 @@ type
 
   InvalidStateError* = object of Exception
 
-proc close*(client: PostgresConnection | AsyncPostgresConnection) =
+proc close*(client: PostgresConnection | AsyncPostgresConnection) {.multisync.} =
   if client.state != ConnectionState.Disconnected:
     # TODO: send the close packet
+    try:
+      let terminateMessage = initTerminateMessage()
+      await client.sock.send($terminateMessage)
+    except: discard # ignore any errors sending the terminate command
+
     client.sock.close()
     client.state = ConnectionState.Disconnected
 
@@ -61,14 +66,6 @@ proc readPacket(client: PostgresConnection | AsyncPostgresConnection): Future[Op
   let packetData = await client.sock.recv(packetLength)
 
   result = some(fromData(packetType, packetData))
-
-template handleErrorResponse(packet: PostgresMessage) =
-  let err = PostgresConnectionError(
-    errorDetails: packet.error,
-    msg: "[" & $packet.error.code & "] " & packet.error.message
-  )
-
-  raise err
 
 proc startup(conn: PostgresConnection | AsyncPostgresConnection, user: string, password: string, database: string) {.multisync.} =
   await conn.sock.connect(conn.host, conn.port)
@@ -87,7 +84,12 @@ proc startup(conn: PostgresConnection | AsyncPostgresConnection, user: string, p
       if packet.isBackend:
         case packet.backendMessageType
         of BackendMessageType.ErrorResponse:
-          handleErrorResponse(packet)
+          await conn.close()
+
+          raise PostgresConnectionError(
+            errorDetails: packet.error,
+            msg: "[" & $packet.error.code & "] " & packet.error.message
+          )
         of BackendMessageType.NoticeResponse:
           if not isNil(conn.noticeCallback):
             conn.noticeCallback(packet)
@@ -117,7 +119,7 @@ proc startup(conn: PostgresConnection | AsyncPostgresConnection, user: string, p
       else:
         raise newException(UnexpectedPacketError, "Received unexpected frontend packet during startup")
     else:
-      conn.close()
+      await conn.close()
       raise newException(ConnectionClosedError, "Connection to server lost during startup")
 
 proc open*(host = "localhost", port = DefaultPort, user = "postgres", password = "", database = "", noticeCallback: NoticeCallbackFunction = nil): PostgresConnection =
@@ -212,13 +214,16 @@ proc query*(conn: PostgresConnection | AsyncPostgresConnection, query: string): 
       else:
         raise newException(UnexpectedPacketError, "Received unexpected frontend packet during startup")
     else:
-      conn.close()
+      await conn.close()
       raise newException(ConnectionClosedError, "Connection to server lost during query")
 
   conn.state = ConnectionState.ReadyForQuery
   if isSome(error):
-    handleErrorResponse(error.get())
-
+    let errPacket = error.get()
+    raise PostgresConnectionError(
+      errorDetails: errPacket.error,
+      msg: "[" & $errPacket.error.code & "] " & errPacket.error.message
+    )
 
 when isMainModule:
   proc logNotice(notice: PostgresMessage) =
