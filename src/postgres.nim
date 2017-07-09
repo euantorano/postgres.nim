@@ -13,12 +13,18 @@ type
     Startup,
     ReadyForQuery
 
+  NoticeCallbackFunction* = proc(notice: PostgresMessage) {.gcsafe.}
+    ## Callback function to handle any notice messages sent by the Postgres server.
+
   PostgresConnectionBase[TSocket] = object of RootObj
     host: string
     port: Port
     sock: TSocket
     state: ConnectionState
+    backendProcessId: int32
+    backendSecretKey: int32
     transactionStatus: BackendTransactionStatus
+    noticeCallback: NoticeCallbackFunction
 
   PostgresConnection* = ref object of PostgresConnectionBase[net.Socket]
 
@@ -66,7 +72,6 @@ proc startup(conn: PostgresConnection | AsyncPostgresConnection, user: string, p
     if isSome(readPacket):
       let packet = readPacket.get()
 
-      # TODO: Check auth packet type and handle authentication
       if packet.isBackend:
         case packet.backendMessageType
         of BackendMessageType.ErrorResponse:
@@ -77,8 +82,8 @@ proc startup(conn: PostgresConnection | AsyncPostgresConnection, user: string, p
 
           raise err
         of BackendMessageType.NoticeResponse:
-          # TODO: How do we handle notices? Log?
-          echo "Got notice: ", repr(packet)
+          if not isNil(conn.noticeCallback):
+            conn.noticeCallback(packet)
         of BackendMessageType.AuthenticationRequest:
           case packet.authenticationType
           of AuthenticationType.Ok: discard # Nothing else needed
@@ -91,14 +96,12 @@ proc startup(conn: PostgresConnection | AsyncPostgresConnection, user: string, p
           else:
             raise newException(UnsupportedAuthenticationTypeError, "Unsupported authentication type: " & $packet.authenticationType)
         of BackendMessageType.BackendKeyData:
-          # TODO: save secret key data
-          echo "Got backend key data: ", repr(packet)
+          conn.backendProcessId = packet.processId
+          conn.backendSecretKey = packet.secretKey
         of BackendMessageType.ParameterStatus:
-          # TODO: Save backend parameters
-          echo "Got parameter status: ", repr(packet)
+          # TODO: Save backend parameters?
+          discard
         of BackendMessageType.ReadyForQuery:
-          # Startup complete, ready to start using connection
-          echo "Ready for query: ", repr(packet)
           conn.state = ConnectionState.ReadyForQuery
           conn.transactionStatus = packet.backendTransactionStatus
           return
@@ -110,30 +113,35 @@ proc startup(conn: PostgresConnection | AsyncPostgresConnection, user: string, p
       conn.close()
       return
 
-proc open*(host = "localhost", port = DefaultPort, user = "postgres", password = "", database = ""): PostgresConnection =
+proc open*(host = "localhost", port = DefaultPort, user = "postgres", password = "", database = "", noticeCallback: NoticeCallbackFunction = nil): PostgresConnection =
   result = PostgresConnection(
     host: host,
     port: port,
     sock: newSocket(sockType = SOCK_STREAM, protocol = IPPROTO_TCP, buffered = true),
     state: ConnectionState.Startup,
-    transactionStatus: BackendTransactionStatus.Idle
+    transactionStatus: BackendTransactionStatus.Idle,
+    noticeCallback: noticeCallback
   )
 
   result.startup(user, password, database)
 
-proc openAsync*(host = "localhost", port = DefaultPort, user = "postgres", password = "", database = ""): Future[AsyncPostgresConnection] {.async.} =
+proc openAsync*(host = "localhost", port = DefaultPort, user = "postgres", password = "", database = "", noticeCallback: NoticeCallbackFunction = nil): Future[AsyncPostgresConnection] {.async.} =
   result = AsyncPostgresConnection(
     host: host,
     port: port,
     sock: newAsyncSocket(sockType = SOCK_STREAM, protocol = IPPROTO_TCP, buffered = true),
     state: ConnectionState.Startup,
-    transactionStatus: BackendTransactionStatus.Idle
+    transactionStatus: BackendTransactionStatus.Idle,
+    noticeCallback: noticeCallback
   )
 
   await result.startup(user, password, database)
 
 when isMainModule:
-  let conn = open(user = "postgres", database = "docs_nimble_directory")
+  proc logNotice(notice: PostgresMessage) =
+    echo "Received notice from server: [", notice.notice.code, "] ", notice.notice.message
+
+  let conn = open(user = "postgres", database = "docs_nimble_directory", noticeCallback = logNotice)
   echo "Opened connection!"
 
   defer: conn.close()
