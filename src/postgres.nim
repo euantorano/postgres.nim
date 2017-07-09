@@ -18,6 +18,7 @@ type
     port: Port
     sock: TSocket
     state: ConnectionState
+    transactionStatus: BackendTransactionStatus
 
   PostgresConnection* = ref object of PostgresConnectionBase[net.Socket]
 
@@ -97,8 +98,9 @@ proc startup(conn: PostgresConnection | AsyncPostgresConnection, user: string, p
           echo "Got parameter status: ", repr(packet)
         of BackendMessageType.ReadyForQuery:
           # Startup complete, ready to start using connection
-          echo "Ready for query!"
+          echo "Ready for query: ", repr(packet)
           conn.state = ConnectionState.ReadyForQuery
+          conn.transactionStatus = packet.backendTransactionStatus
           return
         else:
           raise newException(UnexpectedPacketError, "Received unexpected packet during startup of type: " & $packet.backendMessageType)
@@ -113,7 +115,8 @@ proc open*(host = "localhost", port = DefaultPort, user = "postgres", password =
     host: host,
     port: port,
     sock: newSocket(sockType = SOCK_STREAM, protocol = IPPROTO_TCP, buffered = true),
-    state: ConnectionState.Startup
+    state: ConnectionState.Startup,
+    transactionStatus: BackendTransactionStatus.Idle
   )
 
   result.startup(user, password, database)
@@ -123,7 +126,8 @@ proc openAsync*(host = "localhost", port = DefaultPort, user = "postgres", passw
     host: host,
     port: port,
     sock: newAsyncSocket(sockType = SOCK_STREAM, protocol = IPPROTO_TCP, buffered = true),
-    state: ConnectionState.Startup
+    state: ConnectionState.Startup,
+    transactionStatus: BackendTransactionStatus.Idle
   )
 
   await result.startup(user, password, database)

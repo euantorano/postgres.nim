@@ -186,8 +186,8 @@ type
       of BackendMessageType.AuthenticationRequest:
         authenticationType*: AuthenticationType
       of BackendMessageType.BackendKeyData:
-        processId: int32
-        secretKey: int32
+        processId*: int32
+        secretKey*: int32
       of BackendMessageType.BindComplete: nil
       of BackendMessageType.CloseComplete: nil
       of BackendMessageType.CommandComplete:
@@ -227,12 +227,12 @@ type
         parameterDesccriptionCount: int16
         parameterDataTypeObjectIds: seq[int16]
       of BackendMessageType.ParameterStatus:
-        parameterName: string
-        parameterValue: string
+        parameterName*: string
+        parameterValue*: string
       of BackendMessageType.ParseComplete: nil
       of BackendMessageType.PortalSuspended: nil
       of BackendMessageType.ReadyForQuery:
-        backendTransactionStatus: BackendTransactionStatus
+        backendTransactionStatus*: BackendTransactionStatus
       of BackendMessageType.RowDescription:
         numFieldsInRow: int16
         fields: seq[Field]
@@ -285,6 +285,8 @@ type
       of FrontEndMessageType.PasswordMessage:
         password: string
       else: nil
+
+  PacketParseError* = object of Exception
 
 proc initStartupMessage*(user = "postgres", database = ""): PostgresMessage =
   result = PostgresMessage(
@@ -417,6 +419,51 @@ proc parseAuthenticationRequest(data: string): PostgresMessage {.inline.} =
     authenticationType: AuthenticationType(authenticationResponseType)
   )
 
+proc parseParameterStatus(data: string): PostgresMessage {.inline.} =
+  var buff = initBuffer(data)
+  let
+    parameterName = buff.readString()
+    parameterValue = buff.readString()
+
+  result = PostgresMessage(
+    isBackend: true,
+    backendMessageType: BackendMessageType.ParameterStatus,
+    parameterName: parameterName,
+    parameterValue: parameterValue
+  )
+
+proc parseBackendKeyData(data: string): PostgresMessage {.inline.} =
+  var buff = initBuffer(data)
+  let
+    backendProcessId: int32 = buff.readInt32()
+    backendSecretKey: int32 = buff.readInt32()
+
+  result = PostgresMessage(
+    isBackend: true,
+    backendMessageType: BackendMessageType.BackendKeyData,
+    processId: backendProcessId,
+    secretKey: backendSecretKey
+  )
+
+proc parseReadyForQuery(data: string): PostgresMessage {.inline.} =
+  var transactionStatus: BackendTransactionStatus
+
+  case data[0]
+  of char(BackendTransactionStatus.InFailedTransactionBlock):
+    transactionStatus = BackendTransactionStatus.InFailedTransactionBlock
+  of char(BackendTransactionStatus.Idle):
+    transactionStatus = BackendTransactionStatus.Idle
+  of char(BackendTransactionStatus.InTransactionBlock):
+    transactionStatus = BackendTransactionStatus.InTransactionBlock
+  else:
+    raise newException(PacketParseError, "Failed to parse ready for query packet. Unknown transaction status: " & $data[0])
+
+  result = PostgresMessage(
+    isBackend: true,
+    backendMessageType: BackendMessageType.ReadyForQuery,
+    backendTransactionStatus: transactionStatus
+  )
+
 proc fromData*(typ: char, data: string): PostgresMessage =
   case typ
   of char(BackendMessageType.ErrorResponse):
@@ -425,6 +472,12 @@ proc fromData*(typ: char, data: string): PostgresMessage =
     result = parseNoticeResponse(data)
   of char(BackendMessageType.AuthenticationRequest):
     result = parseAuthenticationRequest(data)
+  of char(BackendMessageType.ParameterStatus):
+    result = parseParameterStatus(data)
+  of char(BackendMessageType.BackendKeyData):
+    result = parseBackendKeyData(data)
+  of char(BackendMessageType.ReadyForQuery):
+    result = parseReadyForQuery(data)
   else:
     result = PostgresMessage(
       isBackend: true,
