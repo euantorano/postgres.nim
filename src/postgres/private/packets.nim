@@ -327,78 +327,71 @@ proc parseLogMessageFields(data: string): LogMessage {.inline.} =
   result = LogMessage()
 
   var
-    hasCode: bool = false
+    buff = initBuffer(data)
     currentCode: char
-    currentMessage: string = ""
+    currentMessage: string
 
-  for c in data:
-    if not hasCode:
-      currentCode = c
-      hasCode = true
-    else:
-      if c == '\0':
-        case currentCode
-        of 'S':
-          case currentMessage
-          of "ERROR":
-            result.severity = LogMessageSeverity.Error
-          of "FATAL":
-            result.severity = LogMessageSeverity.Fatal
-          of "PANIC":
-            result.severity = LogMessageSeverity.Panic
-          of "WARNING":
-            result.severity = LogMessageSeverity.Warning
-          of "NOTICE":
-            result.severity = LogMessageSeverity.Notice
-          of "DEBUG":
-            result.severity = LogMessageSeverity.Debug
-          of "LOG":
-            result.severity = LogMessageSeverity.Log
-          else: discard
-        of 'C':
-          result.code = currentMessage
-        of 'M':
-          result.message = currentMessage
-        of 'D':
-          result.detail = currentMessage
-        of 'H':
-          result.hint = currentMessage
-        of 'P':
-          try:
-            let position = parseInt(currentMessage)
-            result.position = position
-          except:
-            result.position = 0
-        of 'q':
-          result.internalQuery = currentMessage
-        of 'W':
-          result.where = currentMessage
-        of 's':
-          result.schema = currentMessage
-        of 't':
-          result.table = currentMessage
-        of 'c':
-          result.columnName = currentMessage
-        of 'd':
-          result.dataTypeName = currentMessage
-        of 'n':
-          result.constraintName = currentMessage
-        of 'F':
-          result.file = currentMessage
-        of 'L':
-          try:
-            let line = parseInt(currentMessage)
-            result.line = line
-          except:
-            result.line = 0
-        of 'R':
-          result.routine = currentMessage
+  while not buff.eof():
+    currentCode = buff.readChar()
+    currentMessage = buff.readString()
+
+    case currentCode
+      of 'S':
+        case currentMessage
+        of "ERROR":
+          result.severity = LogMessageSeverity.Error
+        of "FATAL":
+          result.severity = LogMessageSeverity.Fatal
+        of "PANIC":
+          result.severity = LogMessageSeverity.Panic
+        of "WARNING":
+          result.severity = LogMessageSeverity.Warning
+        of "NOTICE":
+          result.severity = LogMessageSeverity.Notice
+        of "DEBUG":
+          result.severity = LogMessageSeverity.Debug
+        of "LOG":
+          result.severity = LogMessageSeverity.Log
         else: discard
-
-        hasCode = false
-        currentMessage = ""
-      else:
-        currentMessage.add(c)
+      of 'C':
+        result.code = currentMessage
+      of 'M':
+        result.message = currentMessage
+      of 'D':
+        result.detail = currentMessage
+      of 'H':
+        result.hint = currentMessage
+      of 'P':
+        try:
+          let position = parseInt(currentMessage)
+          result.position = position
+        except:
+          result.position = 0
+      of 'q':
+        result.internalQuery = currentMessage
+      of 'W':
+        result.where = currentMessage
+      of 's':
+        result.schema = currentMessage
+      of 't':
+        result.table = currentMessage
+      of 'c':
+        result.columnName = currentMessage
+      of 'd':
+        result.dataTypeName = currentMessage
+      of 'n':
+        result.constraintName = currentMessage
+      of 'F':
+        result.file = currentMessage
+      of 'L':
+        try:
+          let line = parseInt(currentMessage)
+          result.line = line
+        except:
+          result.line = 0
+      of 'R':
+        result.routine = currentMessage
+      else: discard
 
 proc parseErrorResponse(data: string): PostgresMessage {.inline.} =
   result = PostgresMessage(

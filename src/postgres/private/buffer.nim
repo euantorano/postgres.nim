@@ -50,6 +50,9 @@ proc writeString*(b: var Buffer, s: string) =
 
   inc(b.writePos, len(s) + 1)
 
+proc eof*(b: Buffer): bool =
+  result = b.readPos >= len(b.buffer)
+
 proc readChar*(b: var Buffer): char =
   result = b.buffer[b.readPos]
   inc(b.readPos)
@@ -65,3 +68,10 @@ proc readInt32*(b: var Buffer): int32 =
     result = cast[int32](bigEndianVal)
   else:
     bigEndian32(addr result, addr bigEndianVal[0])
+
+proc readString*(b: var Buffer): string =
+  for i in b.readPos..high(b.buffer):
+    if b.buffer[i] == '\0':
+      result = b.buffer[b.readPos..i-1]
+      b.readPos = i + 1
+      return

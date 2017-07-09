@@ -66,6 +66,8 @@ proc open*(client: PostgresClient | AsyncPostgresClient, user = "postgres", data
   if isSome(readPacket):
     let packet = readPacket.get()
 
+    # TODO: Check auth packet type and handle authentication
+
     if packet.isBackend and packet.backendMessageType == BackendMessageType.ErrorResponse:
       echo "Got error packet with error: ", packet.error
     else:
