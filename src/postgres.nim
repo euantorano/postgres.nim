@@ -11,35 +11,32 @@ type
   ConnectionState {.pure.} = enum
     Disconnected,
     Startup,
-    Connected
+    ReadyForQuery
 
-  PostgresClientBase[TSocket] = object of RootObj
+  PostgresConnectionBase[TSocket] = object of RootObj
     host: string
     port: Port
     sock: TSocket
     state: ConnectionState
 
-  PostgresClient* = ref object of PostgresClientBase[net.Socket]
+  PostgresConnection* = ref object of PostgresConnectionBase[net.Socket]
 
-  AsyncPostgresClient* = ref object of PostgresClientBase[AsyncSocket]
+  AsyncPostgresConnection* = ref object of PostgresConnectionBase[AsyncSocket]
 
-proc newPostgresClient*(host = "localhost", port = DefaultPort): PostgresClient =
-  result = PostgresClient(
-    host: host,
-    port: port,
-    sock: newSocket(sockType = SOCK_STREAM, protocol = IPPROTO_TCP, buffered = true),
-    state: ConnectionState.Disconnected
-  )
+  PostgresConnectionError* = ref object of Exception
+    errorDetails: LogMessage
 
-proc newAsyncPostgresClient*(host = "localhost", port = DefaultPort): AsyncPostgresClient =
-  result = AsyncPostgresClient(
-    host: host,
-    port: port,
-    sock: newAsyncSocket(sockType = SOCK_STREAM, protocol = IPPROTO_TCP, buffered = true),
-    state: ConnectionState.Disconnected
-  )
+  UnsupportedAuthenticationTypeError* = object of Exception
 
-proc readPacket(client: PostgresClient | AsyncPostgresClient): Future[Option[PostgresMessage]] {.multisync.} =
+  UnexpectedPacketError* = object of Exception
+
+proc close*(client: PostgresConnection | AsyncPostgresConnection) =
+  if client.state != ConnectionState.Disconnected:
+    # TODO: send the close packet
+    client.sock.close()
+    client.state = ConnectionState.Disconnected
+
+proc readPacket(client: PostgresConnection | AsyncPostgresConnection): Future[Option[PostgresMessage]] {.multisync.} =
   # Packet header is a packet type (1 byte), followed by length (4 bytes)
   let packetHeader = await client.sock.recv(5)
   if len(packetHeader) < 5:
@@ -53,35 +50,86 @@ proc readPacket(client: PostgresClient | AsyncPostgresClient): Future[Option[Pos
 
   result = some(fromData(packetType, packetData))
 
-proc open*(client: PostgresClient | AsyncPostgresClient, user = "postgres", database = "") {.multisync.} =
-  await client.sock.connect(client.host, client.port)
-  client.state = ConnectionState.Startup
+proc startup(conn: PostgresConnection | AsyncPostgresConnection, user: string, password: string, database: string) {.multisync.} =
+  await conn.sock.connect(conn.host, conn.port)
 
   let startupMessage = initStartupMessage(user, database)
   let startupMessageString = $startupMessage
-  await client.sock.send(startupMessageString)
+  await conn.sock.send(startupMessageString)
 
-  let readPacket = await client.readPacket()
+  var readPacket: Option[PostgresMessage]
 
-  if isSome(readPacket):
-    let packet = readPacket.get()
+  while true:
+    readPacket = await conn.readPacket()
 
-    # TODO: Check auth packet type and handle authentication
+    if isSome(readPacket):
+      let packet = readPacket.get()
 
-    if packet.isBackend and packet.backendMessageType == BackendMessageType.ErrorResponse:
-      echo "Got error packet with error: ", packet.error
+      # TODO: Check auth packet type and handle authentication
+      if packet.isBackend:
+        case packet.backendMessageType
+        of BackendMessageType.ErrorResponse:
+          let err = PostgresConnectionError(
+            errorDetails: packet.error,
+            msg: "[" & $packet.error.code & "] " & packet.error.message
+          )
+
+          raise err
+        of BackendMessageType.NoticeResponse:
+          # TODO: How do we handle notices? Log?
+          echo "Got notice: ", repr(packet)
+        of BackendMessageType.AuthenticationRequest:
+          case packet.authenticationType
+          of AuthenticationType.Ok: discard # Nothing else needed
+          of AuthenticationType.CleartextPassword:
+            # TODO: send cleartext password
+            discard
+          of AuthenticationType.Md5Password:
+            # TODO: Send MD5 password
+            discard
+          else:
+            raise newException(UnsupportedAuthenticationTypeError, "Unsupported authentication type: " & $packet.authenticationType)
+        of BackendMessageType.BackendKeyData:
+          # TODO: save secret key data
+          echo "Got backend key data: ", repr(packet)
+        of BackendMessageType.ParameterStatus:
+          # TODO: Save backend parameters
+          echo "Got parameter status: ", repr(packet)
+        of BackendMessageType.ReadyForQuery:
+          # Startup complete, ready to start using connection
+          echo "Ready for query!"
+          conn.state = ConnectionState.ReadyForQuery
+          return
+        else:
+          raise newException(UnexpectedPacketError, "Received unexpected packet during startup of type: " & $packet.backendMessageType)
+      else:
+        raise newException(UnexpectedPacketError, "Received unexpected frontend error during startup")
     else:
-      echo "Received packet: ", repr(packet)
-  else:
-    echo "Connection closed by server"
+      conn.close()
+      return
 
-proc close*(client: PostgresClient | AsyncPostgresClient) =
-  if client.state != ConnectionState.Disconnected:
-    client.sock.close()
+proc open*(host = "localhost", port = DefaultPort, user = "postgres", password = "", database = ""): PostgresConnection =
+  result = PostgresConnection(
+    host: host,
+    port: port,
+    sock: newSocket(sockType = SOCK_STREAM, protocol = IPPROTO_TCP, buffered = true),
+    state: ConnectionState.Startup
+  )
+
+  result.startup(user, password, database)
+
+proc openAsync*(host = "localhost", port = DefaultPort, user = "postgres", password = "", database = ""): Future[AsyncPostgresConnection] {.async.} =
+  result = AsyncPostgresConnection(
+    host: host,
+    port: port,
+    sock: newAsyncSocket(sockType = SOCK_STREAM, protocol = IPPROTO_TCP, buffered = true),
+    state: ConnectionState.Startup
+  )
+
+  await result.startup(user, password, database)
 
 when isMainModule:
-  let conn = newPostgresClient()
-  conn.open()
+  let conn = open(user = "postgres", database = "docs_nimble_directory")
   echo "Opened connection!"
 
   defer: conn.close()
