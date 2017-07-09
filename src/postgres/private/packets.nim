@@ -191,7 +191,7 @@ type
       of BackendMessageType.BindComplete: nil
       of BackendMessageType.CloseComplete: nil
       of BackendMessageType.CommandComplete:
-        commandTag: string
+        commandTag*: string
       of BackendMessageType.CopyData:
         data: string
       of BackendMessageType.CopyDone: nil
@@ -315,11 +315,30 @@ proc startupMessageToString(m: PostgresMessage, dest: var string) {.inline.} =
 
   dest = $buff
 
+proc initQueryMessage*(query: string): PostgresMessage =
+  result = PostgresMessage(
+    isBackend: false,
+    frontEndMessageType: FrontEndMessageType.Query,
+    query: query
+  )
+
+proc queryMessageToString(m: PostgresMessage, dest: var string) {.inline.} =
+  let packetLen = int32(4 + len(m.query) + 1)
+  var buff = initBuffer(packetlen + 1)
+
+  buff.writeByte(char(FrontEndMessageType.Query))
+  buff.writeInt32(packetLen)
+  buff.writeString(m.query)
+
+  dest = $buff
+
 proc `$`*(m: PostgresMessage): string =
   if not m.isBackend:
     case m.frontEndMessageType
     of FrontEndMessageType.Startup:
       startupMessageToString(m, result)
+    of FrontEndMessageType.Query:
+      queryMessageToString(m, result)
     else:
       result = ""
   else:
@@ -464,6 +483,21 @@ proc parseReadyForQuery(data: string): PostgresMessage {.inline.} =
     backendTransactionStatus: transactionStatus
   )
 
+proc parseCommandComplete(data: string): PostgresMessage {.inline.} =
+  var buff = initBuffer(data)
+
+  result = PostgresMessage(
+    isBackend: true,
+    backendMessageType: BackendMessageType.CommandComplete,
+    commandTag: buff.readString()
+  )
+
+proc parseEmptyQueryResponse(): PostgresMessage {.inline.} =
+  result = PostgresMessage(
+    isBackend: true,
+    backendMessageType: BackendMessageType.EmptyQueryResponse
+  )
+
 proc fromData*(typ: char, data: string): PostgresMessage =
   case typ
   of char(BackendMessageType.ErrorResponse):
@@ -478,6 +512,10 @@ proc fromData*(typ: char, data: string): PostgresMessage =
     result = parseBackendKeyData(data)
   of char(BackendMessageType.ReadyForQuery):
     result = parseReadyForQuery(data)
+  of char(BackendMessageType.CommandComplete):
+    result = parseCommandComplete(data)
+  of char(BackendMessageType.EmptyQueryResponse):
+    result = parseEmptyQueryResponse()
   else:
     result = PostgresMessage(
       isBackend: true,

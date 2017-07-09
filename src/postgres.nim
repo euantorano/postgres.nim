@@ -11,7 +11,8 @@ type
   ConnectionState {.pure.} = enum
     Disconnected,
     Startup,
-    ReadyForQuery
+    ReadyForQuery,
+    QueryInProgress
 
   NoticeCallbackFunction* = proc(notice: PostgresMessage) {.gcsafe.}
     ## Callback function to handle any notice messages sent by the Postgres server.
@@ -30,12 +31,16 @@ type
 
   AsyncPostgresConnection* = ref object of PostgresConnectionBase[AsyncSocket]
 
+  ConnectionClosedError* = object of IOError
+
   PostgresConnectionError* = ref object of Exception
     errorDetails: LogMessage
 
   UnsupportedAuthenticationTypeError* = object of Exception
 
   UnexpectedPacketError* = object of Exception
+
+  InvalidStateError* = object of Exception
 
 proc close*(client: PostgresConnection | AsyncPostgresConnection) =
   if client.state != ConnectionState.Disconnected:
@@ -57,12 +62,19 @@ proc readPacket(client: PostgresConnection | AsyncPostgresConnection): Future[Op
 
   result = some(fromData(packetType, packetData))
 
+template handleErrorResponse(packet: PostgresMessage) =
+  let err = PostgresConnectionError(
+    errorDetails: packet.error,
+    msg: "[" & $packet.error.code & "] " & packet.error.message
+  )
+
+  raise err
+
 proc startup(conn: PostgresConnection | AsyncPostgresConnection, user: string, password: string, database: string) {.multisync.} =
   await conn.sock.connect(conn.host, conn.port)
 
   let startupMessage = initStartupMessage(user, database)
-  let startupMessageString = $startupMessage
-  await conn.sock.send(startupMessageString)
+  await conn.sock.send($startupMessage)
 
   var readPacket: Option[PostgresMessage]
 
@@ -75,12 +87,7 @@ proc startup(conn: PostgresConnection | AsyncPostgresConnection, user: string, p
       if packet.isBackend:
         case packet.backendMessageType
         of BackendMessageType.ErrorResponse:
-          let err = PostgresConnectionError(
-            errorDetails: packet.error,
-            msg: "[" & $packet.error.code & "] " & packet.error.message
-          )
-
-          raise err
+          handleErrorResponse(packet)
         of BackendMessageType.NoticeResponse:
           if not isNil(conn.noticeCallback):
             conn.noticeCallback(packet)
@@ -108,10 +115,10 @@ proc startup(conn: PostgresConnection | AsyncPostgresConnection, user: string, p
         else:
           raise newException(UnexpectedPacketError, "Received unexpected packet during startup of type: " & $packet.backendMessageType)
       else:
-        raise newException(UnexpectedPacketError, "Received unexpected frontend error during startup")
+        raise newException(UnexpectedPacketError, "Received unexpected frontend packet during startup")
     else:
       conn.close()
-      return
+      raise newException(ConnectionClosedError, "Connection to server lost during startup")
 
 proc open*(host = "localhost", port = DefaultPort, user = "postgres", password = "", database = "", noticeCallback: NoticeCallbackFunction = nil): PostgresConnection =
   result = PostgresConnection(
@@ -137,11 +144,60 @@ proc openAsync*(host = "localhost", port = DefaultPort, user = "postgres", passw
 
   await result.startup(user, password, database)
 
+template checkState(conn: PostgresConnection | AsyncPostgresConnection, expectedState: ConnectionState, message: string) =
+  if conn.state != expectedState:
+    raise newException(InvalidStateError, message & $conn.state)
+
+proc query*(conn: PostgresConnection | AsyncPostgresConnection, query: string) {.multisync.} =
+  ## Run an SQL query with no parameters against the connection.
+  conn.checkState(ConnectionState.ReadyForQuery, "Cannot run query whilst in state: ")
+
+  let queryMessage = initQuerymessage(query)
+  conn.state = ConnectionState.QueryInProgress
+  await conn.sock.send($queryMessage)
+
+  var
+    readPacket: Option[PostgresMessage]
+    error: Option[PostgresMessage] = none(PostgresMessage)
+
+  while true:
+    readPacket = await conn.readPacket()
+
+    if isSome(readPacket):
+      let packet = readPacket.get()
+
+      if packet.isBackend:
+        case packet.backendMessageType
+        of BackendMessageType.CommandComplete: discard # TODO: Get number of rows from command complete
+        of BackendMessageType.EmptyQueryResponse: discard # Empty query, no need to do anything
+        of BackendMessageType.ErrorResponse:
+          error = some(packet)
+          break
+        of BackendMessageType.NoticeResponse:
+          if not isNil(conn.noticeCallback):
+            conn.noticeCallback(packet)
+        of BackendMessageType.ReadyForQuery:
+          break
+        else:
+          raise newException(UnexpectedPacketError, "Received unexpected packet during query of type: " & $packet.backendMessageType)
+      else:
+        raise newException(UnexpectedPacketError, "Received unexpected frontend packet during startup")
+    else:
+      conn.close()
+      raise newException(ConnectionClosedError, "Connection to server lost during query")
+
+  conn.state = ConnectionState.ReadyForQuery
+  if isSome(error):
+    handleErrorResponse(error.get())
+
+
 when isMainModule:
   proc logNotice(notice: PostgresMessage) =
     echo "Received notice from server: [", notice.notice.code, "] ", notice.notice.message
 
   let conn = open(user = "postgres", database = "docs_nimble_directory", noticeCallback = logNotice)
+  defer: conn.close()
   echo "Opened connection!"
 
-  defer: conn.close()
+  conn.query("CREATE TABLE IF NOT EXISTS users (name varchar(255) NOT NULL, age integer NOT NULL);")
+  echo "Created users table!"
