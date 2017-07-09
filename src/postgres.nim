@@ -158,7 +158,7 @@ template tryParseNumRows(data: string, fromIdx: int, success: var bool, dest: va
     dest = 0
     success = false
 
-proc query*(conn: PostgresConnection | AsyncPostgresConnection, query: string): Future[int] {.multisync, discardable.} =
+proc execute*(conn: PostgresConnection | AsyncPostgresConnection, query: string): Future[int] {.multisync, discardable.} =
   ## Run an SQL query with no parameters against the connection.
   ##
   ## Returns the number of rows affected by the query. In the case that the query contains multiple commands, only the number of rows affected by the first command will be returned.
@@ -203,11 +203,11 @@ proc query*(conn: PostgresConnection | AsyncPostgresConnection, query: string): 
         of BackendMessageType.EmptyQueryResponse: discard # Empty query, no need to do anything
         of BackendMessageType.ErrorResponse:
           error = some(packet)
-          break
         of BackendMessageType.NoticeResponse:
           if not isNil(conn.noticeCallback):
             conn.noticeCallback(packet)
         of BackendMessageType.ReadyForQuery:
+          # We always get a ready for query packet to end the query - even if there was an error
           break
         else:
           raise newException(UnexpectedPacketError, "Received unexpected packet during query of type: " & $packet.backendMessageType)
@@ -233,11 +233,11 @@ when isMainModule:
   defer: conn.close()
   echo "Opened connection!"
 
-  conn.query("CREATE TABLE IF NOT EXISTS users (name varchar(255) NOT NULL, age integer NOT NULL);")
+  conn.execute("CREATE TABLE IF NOT EXISTS users (name varchar(255) NOT NULL, age integer NOT NULL);")
   echo "Created users table!"
 
-  let numRowsInsert = conn.query("INSERT INTO users (name, age) VALUES ('euan', 1);")
+  let numRowsInsert = conn.execute("INSERT INTO users (name, age) VALUES ('euan', 1);")
   echo "Inserted ", numRowsInsert, " rows into the users table"
 
-  let numRowsDelete = conn.query("DELETE FROM users WHERE name = 'euan';")
+  let numRowsDelete = conn.execute("DELETE FROM users WHERE name = 'euan';")
   echo "Deleted ", numRowsDelete, " rows from the users table"
