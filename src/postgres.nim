@@ -1,6 +1,6 @@
 ## A PostgreSQL client library for Nim.
 
-import net, asyncdispatch, asyncnet, options
+import net, asyncdispatch, asyncnet, options, strutils
 
 import postgres/private/[packets, buffer]
 
@@ -148,9 +148,21 @@ template checkState(conn: PostgresConnection | AsyncPostgresConnection, expected
   if conn.state != expectedState:
     raise newException(InvalidStateError, message & $conn.state)
 
-proc query*(conn: PostgresConnection | AsyncPostgresConnection, query: string) {.multisync.} =
+template tryParseNumRows(data: string, fromIdx: int, success: var bool, dest: var int) =
+  try:
+    dest = parseInt(data[fromIdx..len(data) - 1])
+    success = true
+  except:
+    dest = 0
+    success = false
+
+proc query*(conn: PostgresConnection | AsyncPostgresConnection, query: string): Future[int] {.multisync, discardable.} =
   ## Run an SQL query with no parameters against the connection.
-  conn.checkState(ConnectionState.ReadyForQuery, "Cannot run query whilst in state: ")
+  ##
+  ## Returns the number of rows affected by the query. In the case that the query contains multiple commands, only the number of rows affected by the first command will be returned.
+  ##
+  ## Updates, inserts and any other queries with values should use the other versions of this procedure that take a list of parameters.
+  checkState(conn, ConnectionState.ReadyForQuery, "Cannot run query whilst in state: ")
 
   let queryMessage = initQuerymessage(query)
   conn.state = ConnectionState.QueryInProgress
@@ -159,6 +171,7 @@ proc query*(conn: PostgresConnection | AsyncPostgresConnection, query: string) {
   var
     readPacket: Option[PostgresMessage]
     error: Option[PostgresMessage] = none(PostgresMessage)
+    hasNumRows = false
 
   while true:
     readPacket = await conn.readPacket()
@@ -168,7 +181,23 @@ proc query*(conn: PostgresConnection | AsyncPostgresConnection, query: string) {
 
       if packet.isBackend:
         case packet.backendMessageType
-        of BackendMessageType.CommandComplete: discard # TODO: Get number of rows from command complete
+        of BackendMessageType.CommandComplete:
+          if len(packet.commandTag) > 0 and not hasNumRows:
+            # Check that the command tag is a command tag that has rows
+            if len(packet.commandTag) > 9 and packet.commandTag[0..5] == "INSERT":
+              tryParseNumRows(packet.commandTag, 9, hasNumRows, result)
+            elif len(packet.commandTag) > 7 and packet.commandTag[0..5] == "DELETE":
+              tryParseNumRows(packet.commandTag, 7, hasNumRows, result)
+            elif len(packet.commandTag) > 7 and packet.commandTag[0..5] == "UPDATE":
+              tryParseNumRows(packet.commandTag, 7, hasNumRows, result)
+            elif len(packet.commandTag) > 7 and packet.commandTag[0..5] == "SELECT":
+              tryParseNumRows(packet.commandTag, 7, hasNumRows, result)
+            elif len(packet.commandTag) > 5 and packet.commandTag[0..3] == "MOVE":
+              tryParseNumRows(packet.commandTag, 5, hasNumRows, result)
+            elif len(packet.commandTag) > 6 and packet.commandTag[0..4] == "FETCH":
+              tryParseNumRows(packet.commandTag, 6, hasNumRows, result)
+            elif len(packet.commandTag) > 5 and packet.commandTag[0..3] == "COPY":
+              tryParseNumRows(packet.commandTag, 5, hasNumRows, result)
         of BackendMessageType.EmptyQueryResponse: discard # Empty query, no need to do anything
         of BackendMessageType.ErrorResponse:
           error = some(packet)
@@ -201,3 +230,9 @@ when isMainModule:
 
   conn.query("CREATE TABLE IF NOT EXISTS users (name varchar(255) NOT NULL, age integer NOT NULL);")
   echo "Created users table!"
+
+  let numRowsInsert = conn.query("INSERT INTO users (name, age) VALUES ('euan', 1);")
+  echo "Inserted ", numRowsInsert, " rows into the users table"
+
+  let numRowsDelete = conn.query("DELETE FROM users WHERE name = 'euan';")
+  echo "Deleted ", numRowsDelete, " rows from the users table"

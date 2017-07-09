@@ -9,4 +9,6 @@ A PostgreSQL client library for Nim. It features both a synchronous connection a
     - [ ] Cleartext authentication
     - [ ] MD5 authentication
 - [ ] Running queies
+    - [X] Simple queries with no parameters
+        - [ ] Queries using `COPY FROM STDIN` or any other type of copy
 - [ ] Connection pool
