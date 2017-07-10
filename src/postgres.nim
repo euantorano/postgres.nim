@@ -44,7 +44,6 @@ type
 
 proc close*(client: PostgresConnection | AsyncPostgresConnection) {.multisync.} =
   if client.state != ConnectionState.Disconnected:
-    # TODO: send the close packet
     try:
       let terminateMessage = initTerminateMessage()
       await client.sock.send($terminateMessage)
