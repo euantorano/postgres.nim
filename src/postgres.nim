@@ -149,15 +149,15 @@ template checkState(conn: PostgresConnection | AsyncPostgresConnection, expected
   if conn.state != expectedState:
     raise newException(InvalidStateError, message & $conn.state)
 
-template tryParseNumRows(data: string, fromIdx: int, success: var bool, dest: var int) =
+template tryParseNumRows(data: string, fromIdx: int, success: var bool, dest: var BiggestInt) =
   try:
-    dest = parseInt(data[fromIdx..len(data) - 1])
+    dest = parseBiggestInt(data[fromIdx..len(data) - 1])
     success = true
   except:
     dest = 0
     success = false
 
-proc execute*(conn: PostgresConnection | AsyncPostgresConnection, query: string): Future[int] {.multisync, discardable.} =
+proc execute*(conn: PostgresConnection | AsyncPostgresConnection, query: string): Future[BiggestInt] {.multisync, discardable.} =
   ## Run an SQL query with no parameters against the connection.
   ##
   ## Returns the number of rows affected by the query. In the case that the query contains multiple commands, only the number of rows affected by the first command will be returned.
