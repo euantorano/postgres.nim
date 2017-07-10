@@ -228,7 +228,7 @@ when isMainModule:
   proc logNotice(notice: PostgresMessage) =
     echo "Received notice from server: [", notice.notice.code, "] ", notice.notice.message
 
-  let conn = open(host = "192.168.7.44", user = "postgres", password = "password", database = "test", noticeCallback = logNotice)
+  let conn = open(host = "localhost", user = "postgres", password = "password", database = "test", noticeCallback = logNotice)
   defer: conn.close()
   echo "Opened connection!"
 

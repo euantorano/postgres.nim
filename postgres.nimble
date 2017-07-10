@@ -11,3 +11,8 @@ srcDir = "src"
 
 requires "nim >= 0.17.0"
 
+task docs, "Build documentation":
+  exec "nim doc --index:on -o:docs/postgres.html src/postgres.nim"
+
+task test, "Run tests":
+  exec "nim c -r tests/main.nim"

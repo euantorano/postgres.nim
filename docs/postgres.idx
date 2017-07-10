@@ -1,0 +1,13 @@
+DefaultPort	postgres.html#DefaultPort	postgres : DefaultPort	
+NoticeCallbackFunction	postgres.html#NoticeCallbackFunction	postgres : NoticeCallbackFunction	
+PostgresConnection	postgres.html#PostgresConnection	postgres : PostgresConnection	
+AsyncPostgresConnection	postgres.html#AsyncPostgresConnection	postgres : AsyncPostgresConnection	
+ConnectionClosedError	postgres.html#ConnectionClosedError	postgres : ConnectionClosedError	
+PostgresCommandError	postgres.html#PostgresCommandError	postgres : PostgresCommandError	
+UnsupportedAuthenticationTypeError	postgres.html#UnsupportedAuthenticationTypeError	postgres : UnsupportedAuthenticationTypeError	
+UnexpectedPacketError	postgres.html#UnexpectedPacketError	postgres : UnexpectedPacketError	
+InvalidStateError	postgres.html#InvalidStateError	postgres : InvalidStateError	
+close	postgres.html#close,	postgres : close*(client: PostgresConnection | AsyncPostgresConnection)	
+open	postgres.html#open,NoticeCallbackFunction	postgres : open*(host = &quot;localhost&quot;; port = DefaultPort; user = &quot;postgres&quot;; password = &quot;&quot;;\n      database = &quot;&quot;; noticeCallback: NoticeCallbackFunction = nil): PostgresConnection	
+openAsync	postgres.html#openAsync,NoticeCallbackFunction	postgres : openAsync*(host = &quot;localhost&quot;; port = DefaultPort; user = &quot;postgres&quot;; password = &quot;&quot;;\n           database = &quot;&quot;; noticeCallback: NoticeCallbackFunction = nil): Future[\n    AsyncPostgresConnection]	
+execute	postgres.html#execute,,string	postgres : execute*(conn: PostgresConnection | AsyncPostgresConnection; query: string): Future[\n    BiggestInt]	
