@@ -12,4 +12,5 @@ A PostgreSQL client library for Nim. It features both a synchronous connection a
 - [ ] Running queies
     - [X] Simple queries with no parameters
         - [ ] Queries using `COPY FROM STDIN` or any other type of copy
+    - [ ] Prepared statements with bound parameters
 - [ ] Connection pool

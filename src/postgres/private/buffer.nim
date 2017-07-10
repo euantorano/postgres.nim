@@ -33,8 +33,8 @@ proc writeByte*(b: var Buffer, i: uint8 | byte | char) =
   inc(b.writePos)
 
 proc resizeBufferIfNeeded(b: var Buffer, spaceRequired: int) =
-  if len(b.buffer) < (b.writePos + spaceRequired + 1):
-    setLen(b.buffer, b.writePos + spaceRequired + 1)
+  if len(b.buffer) < (b.writePos + spaceRequired):
+    setLen(b.buffer, b.writePos + spaceRequired)
 
 proc writeInt32*(b: var Buffer, i: int32)=
   var sourceInt: int32 = i
@@ -53,7 +53,7 @@ proc writeInt16*(b: var Buffer, i: int16) =
   inc(b.writePos, sizeof(int16))
 
 proc writeString*(b: var Buffer, s: string) =
-  b.resizeBufferIfNeeded(len(s))
+  b.resizeBufferIfNeeded(len(s) + 1)
 
   for i in 0..high(s):
     b.buffer[b.writePos + i] = s[i]

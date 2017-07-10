@@ -338,7 +338,7 @@ proc initMd5PasswordMessage*(password: string, user: string, salt: string): Post
 
 proc passwordMessageToString(m: PostgresMessage, dest: var string) {.inline.} =
   let packetLen = int32(4 + len(m.password) + 1)
-  var buff = initBuffer(packetLen)
+  var buff = initBuffer(packetLen + 1)
 
   buff.writeByte(char(FrontEndMessageType.PasswordMessage))
   buff.writeInt32(packetLen)
