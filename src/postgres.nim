@@ -4,6 +4,8 @@ import net, asyncdispatch, asyncnet, options, strutils
 
 import postgres/private/[packets, buffer]
 
+export packets
+
 const
   DefaultPort* = Port(5432)
 
@@ -223,20 +225,3 @@ proc execute*(conn: PostgresConnection | AsyncPostgresConnection, query: string)
       errorDetails: errPacket.error,
       msg: "[" & $errPacket.error.code & "] " & errPacket.error.message
     )
-
-when isMainModule:
-  proc logNotice(notice: PostgresMessage) =
-    echo "Received notice from server: [", notice.notice.code, "] ", notice.notice.message
-
-  let conn = open(host = "localhost", user = "postgres", password = "password", database = "test", noticeCallback = logNotice)
-  defer: conn.close()
-  echo "Opened connection!"
-
-  conn.execute("CREATE TABLE IF NOT EXISTS users (id serial PRIMARY KEY, name varchar(255) NOT NULL, age integer NOT NULL);")
-  echo "Created users table!"
-
-  let numRowsInsert = conn.execute("INSERT INTO users (name, age) VALUES ('euan', 1);")
-  echo "Inserted ", numRowsInsert, " rows into the users table"
-
-  let numRowsDelete = conn.execute("DELETE FROM users WHERE name = 'euan';")
-  echo "Deleted ", numRowsDelete, " rows from the users table"

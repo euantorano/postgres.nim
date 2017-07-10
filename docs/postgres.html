@@ -1284,21 +1284,12 @@ function main() {
 <dd>
 Callback function to handle any notice messages sent by the Postgres server.
 &nbsp;&nbsp;<a
-href="/tree/master/src/postgres.nim#L17"
+href="/tree/master/src/postgres.nim#L19"
 class="link-seesrc" target="_blank">Source</a>
-<a href="/edit/devel/src/postgres.nim#L17" class="link-seesrc" target="_blank" >Edit</a>
+<a href="/edit/devel/src/postgres.nim#L19" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
 <dt id="PostgresConnection"><a name="PostgresConnection"></a><pre><span class="Identifier">PostgresConnection</span><span class="Operator">*</span> <span class="Other">=</span> <span class="Keyword">ref</span> <span class="Keyword">object</span> <span class="Keyword">of</span> <span class="Identifier">PostgresConnectionBase</span><span class="Other">[</span><span class="Identifier">net</span><span class="Other">.</span><span class="Identifier">Socket</span><span class="Other">]</span></pre></dt>
-<dd>
-
-&nbsp;&nbsp;<a
-href="/tree/master/src/postgres.nim#L30"
-class="link-seesrc" target="_blank">Source</a>
-<a href="/edit/devel/src/postgres.nim#L30" class="link-seesrc" target="_blank" >Edit</a>
-
-</dd>
-<dt id="AsyncPostgresConnection"><a name="AsyncPostgresConnection"></a><pre><span class="Identifier">AsyncPostgresConnection</span><span class="Operator">*</span> <span class="Other">=</span> <span class="Keyword">ref</span> <span class="Keyword">object</span> <span class="Keyword">of</span> <span class="Identifier">PostgresConnectionBase</span><span class="Other">[</span><span class="Identifier">AsyncSocket</span><span class="Other">]</span></pre></dt>
 <dd>
 
 &nbsp;&nbsp;<a
@@ -1307,7 +1298,7 @@ class="link-seesrc" target="_blank">Source</a>
 <a href="/edit/devel/src/postgres.nim#L32" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
-<dt id="ConnectionClosedError"><a name="ConnectionClosedError"></a><pre><span class="Identifier">ConnectionClosedError</span><span class="Operator">*</span> <span class="Other">=</span> <span class="Keyword">object</span> <span class="Keyword">of</span> <span class="Identifier">IOError</span></pre></dt>
+<dt id="AsyncPostgresConnection"><a name="AsyncPostgresConnection"></a><pre><span class="Identifier">AsyncPostgresConnection</span><span class="Operator">*</span> <span class="Other">=</span> <span class="Keyword">ref</span> <span class="Keyword">object</span> <span class="Keyword">of</span> <span class="Identifier">PostgresConnectionBase</span><span class="Other">[</span><span class="Identifier">AsyncSocket</span><span class="Other">]</span></pre></dt>
 <dd>
 
 &nbsp;&nbsp;<a
@@ -1316,9 +1307,7 @@ class="link-seesrc" target="_blank">Source</a>
 <a href="/edit/devel/src/postgres.nim#L34" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
-<dt id="PostgresCommandError"><a name="PostgresCommandError"></a><pre><span class="Identifier">PostgresCommandError</span><span class="Operator">*</span> <span class="Other">=</span> <span class="Keyword">ref</span> <span class="Keyword">object</span> <span class="Keyword">of</span> <span class="Identifier">Exception</span>
-  <span class="Identifier">errorDetails</span><span class="Other">:</span> <span class="Identifier">LogMessage</span>
-</pre></dt>
+<dt id="ConnectionClosedError"><a name="ConnectionClosedError"></a><pre><span class="Identifier">ConnectionClosedError</span><span class="Operator">*</span> <span class="Other">=</span> <span class="Keyword">object</span> <span class="Keyword">of</span> <span class="Identifier">IOError</span></pre></dt>
 <dd>
 
 &nbsp;&nbsp;<a
@@ -1327,16 +1316,18 @@ class="link-seesrc" target="_blank">Source</a>
 <a href="/edit/devel/src/postgres.nim#L36" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
-<dt id="UnsupportedAuthenticationTypeError"><a name="UnsupportedAuthenticationTypeError"></a><pre><span class="Identifier">UnsupportedAuthenticationTypeError</span><span class="Operator">*</span> <span class="Other">=</span> <span class="Keyword">object</span> <span class="Keyword">of</span> <span class="Identifier">Exception</span></pre></dt>
+<dt id="PostgresCommandError"><a name="PostgresCommandError"></a><pre><span class="Identifier">PostgresCommandError</span><span class="Operator">*</span> <span class="Other">=</span> <span class="Keyword">ref</span> <span class="Keyword">object</span> <span class="Keyword">of</span> <span class="Identifier">Exception</span>
+  <span class="Identifier">errorDetails</span><span class="Other">:</span> <span class="Identifier">LogMessage</span>
+</pre></dt>
 <dd>
 
 &nbsp;&nbsp;<a
-href="/tree/master/src/postgres.nim#L39"
+href="/tree/master/src/postgres.nim#L38"
 class="link-seesrc" target="_blank">Source</a>
-<a href="/edit/devel/src/postgres.nim#L39" class="link-seesrc" target="_blank" >Edit</a>
+<a href="/edit/devel/src/postgres.nim#L38" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
-<dt id="UnexpectedPacketError"><a name="UnexpectedPacketError"></a><pre><span class="Identifier">UnexpectedPacketError</span><span class="Operator">*</span> <span class="Other">=</span> <span class="Keyword">object</span> <span class="Keyword">of</span> <span class="Identifier">Exception</span></pre></dt>
+<dt id="UnsupportedAuthenticationTypeError"><a name="UnsupportedAuthenticationTypeError"></a><pre><span class="Identifier">UnsupportedAuthenticationTypeError</span><span class="Operator">*</span> <span class="Other">=</span> <span class="Keyword">object</span> <span class="Keyword">of</span> <span class="Identifier">Exception</span></pre></dt>
 <dd>
 
 &nbsp;&nbsp;<a
@@ -1345,13 +1336,22 @@ class="link-seesrc" target="_blank">Source</a>
 <a href="/edit/devel/src/postgres.nim#L41" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
-<dt id="InvalidStateError"><a name="InvalidStateError"></a><pre><span class="Identifier">InvalidStateError</span><span class="Operator">*</span> <span class="Other">=</span> <span class="Keyword">object</span> <span class="Keyword">of</span> <span class="Identifier">Exception</span></pre></dt>
+<dt id="UnexpectedPacketError"><a name="UnexpectedPacketError"></a><pre><span class="Identifier">UnexpectedPacketError</span><span class="Operator">*</span> <span class="Other">=</span> <span class="Keyword">object</span> <span class="Keyword">of</span> <span class="Identifier">Exception</span></pre></dt>
 <dd>
 
 &nbsp;&nbsp;<a
 href="/tree/master/src/postgres.nim#L43"
 class="link-seesrc" target="_blank">Source</a>
 <a href="/edit/devel/src/postgres.nim#L43" class="link-seesrc" target="_blank" >Edit</a>
+
+</dd>
+<dt id="InvalidStateError"><a name="InvalidStateError"></a><pre><span class="Identifier">InvalidStateError</span><span class="Operator">*</span> <span class="Other">=</span> <span class="Keyword">object</span> <span class="Keyword">of</span> <span class="Identifier">Exception</span></pre></dt>
+<dd>
+
+&nbsp;&nbsp;<a
+href="/tree/master/src/postgres.nim#L45"
+class="link-seesrc" target="_blank">Source</a>
+<a href="/edit/devel/src/postgres.nim#L45" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
 
@@ -1363,9 +1363,9 @@ class="link-seesrc" target="_blank">Source</a>
 <dd>
 
 &nbsp;&nbsp;<a
-href="/tree/master/src/postgres.nim#L8"
+href="/tree/master/src/postgres.nim#L10"
 class="link-seesrc" target="_blank">Source</a>
-<a href="/edit/devel/src/postgres.nim#L8" class="link-seesrc" target="_blank" >Edit</a>
+<a href="/edit/devel/src/postgres.nim#L10" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
 
@@ -1377,9 +1377,9 @@ class="link-seesrc" target="_blank">Source</a>
 <dd>
 
 &nbsp;&nbsp;<a
-href="/tree/master/src/postgres.nim#L45"
+href="/tree/master/src/postgres.nim#L47"
 class="link-seesrc" target="_blank">Source</a>
-<a href="/edit/devel/src/postgres.nim#L45" class="link-seesrc" target="_blank" >Edit</a>
+<a href="/edit/devel/src/postgres.nim#L47" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
 <dt id="open"><a name="open,NoticeCallbackFunction"></a><pre><span class="Keyword">proc</span> <span class="Identifier">open</span><span class="Operator">*</span><span class="Other">(</span><span class="Identifier">host</span> <span class="Other">=</span> <span class="StringLit">&quot;localhost&quot;</span><span class="Other">;</span> <span class="Identifier">port</span> <span class="Other">=</span> <span class="Identifier">DefaultPort</span><span class="Other">;</span> <span class="Identifier">user</span> <span class="Other">=</span> <span class="StringLit">&quot;postgres&quot;</span><span class="Other">;</span> <span class="Identifier">password</span> <span class="Other">=</span> <span class="StringLit">&quot;&quot;</span><span class="Other">;</span>
@@ -1387,9 +1387,9 @@ class="link-seesrc" target="_blank">Source</a>
 <dd>
 
 &nbsp;&nbsp;<a
-href="/tree/master/src/postgres.nim#L124"
+href="/tree/master/src/postgres.nim#L126"
 class="link-seesrc" target="_blank">Source</a>
-<a href="/edit/devel/src/postgres.nim#L124" class="link-seesrc" target="_blank" >Edit</a>
+<a href="/edit/devel/src/postgres.nim#L126" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
 <dt id="openAsync"><a name="openAsync,NoticeCallbackFunction"></a><pre><span class="Keyword">proc</span> <span class="Identifier">openAsync</span><span class="Operator">*</span><span class="Other">(</span><span class="Identifier">host</span> <span class="Other">=</span> <span class="StringLit">&quot;localhost&quot;</span><span class="Other">;</span> <span class="Identifier">port</span> <span class="Other">=</span> <span class="Identifier">DefaultPort</span><span class="Other">;</span> <span class="Identifier">user</span> <span class="Other">=</span> <span class="StringLit">&quot;postgres&quot;</span><span class="Other">;</span> <span class="Identifier">password</span> <span class="Other">=</span> <span class="StringLit">&quot;&quot;</span><span class="Other">;</span>
@@ -1398,9 +1398,9 @@ class="link-seesrc" target="_blank">Source</a>
 <dd>
 
 &nbsp;&nbsp;<a
-href="/tree/master/src/postgres.nim#L136"
+href="/tree/master/src/postgres.nim#L138"
 class="link-seesrc" target="_blank">Source</a>
-<a href="/edit/devel/src/postgres.nim#L136" class="link-seesrc" target="_blank" >Edit</a>
+<a href="/edit/devel/src/postgres.nim#L138" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
 <dt id="execute"><a name="execute,,string"></a><pre><span class="Keyword">proc</span> <span class="Identifier">execute</span><span class="Operator">*</span><span class="Other">(</span><span class="Identifier">conn</span><span class="Other">:</span> <span class="Identifier">PostgresConnection</span> <span class="Operator">|</span> <span class="Identifier">AsyncPostgresConnection</span><span class="Other">;</span> <span class="Identifier">query</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">Future</span><span class="Other">[</span>
@@ -1411,9 +1411,9 @@ class="link-seesrc" target="_blank">Source</a>
 <p>Updates, inserts and any other queries with values should use the other versions of this procedure that take a list of parameters.</p>
 
 &nbsp;&nbsp;<a
-href="/tree/master/src/postgres.nim#L160"
+href="/tree/master/src/postgres.nim#L162"
 class="link-seesrc" target="_blank">Source</a>
-<a href="/edit/devel/src/postgres.nim#L160" class="link-seesrc" target="_blank" >Edit</a>
+<a href="/edit/devel/src/postgres.nim#L162" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
 
@@ -1426,7 +1426,7 @@ class="link-seesrc" target="_blank">Source</a>
       <div class="twelve-columns footer">
         <span class="nim-sprite"></span>
         <br/>
-        <small>Made with Nim. Generated: 2017-07-10 17:47:18 UTC</small>
+        <small>Made with Nim. Generated: 2017-07-10 18:03:34 UTC</small>
       </div>
     </div>
   </div>

@@ -1,7 +1,10 @@
-import postgres, unittest, asyncdispatch
+import postgres, unittest, asyncdispatch, terminal
 
 suite "asynchronous tests":
-  let connection = waitFor openAsync(user = "postgres", password = "password", database = "postgres")
+  proc handleNotice(notice: PostgresMessage) =
+    styledWriteLine(stdout, fgYellow, "  [NOTICE] ", resetStyle, "[", notice.notice.code, "] ", notice.notice.message)
+
+  let connection = waitFor openAsync(user = "postgres", password = "password", database = "postgres", noticeCallback = handleNotice)
   discard waitFor connection.execute("CREATE TABLE IF NOT EXISTS users (id serial PRIMARY KEY, name varchar(255) NOT NULL, age integer NOT NULL);")
 
   test "insert with raw query":

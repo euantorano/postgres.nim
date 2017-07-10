@@ -1,4 +1,4 @@
-# postgres
+# postgres [![CircleCI](https://circleci.com/gh/euantorano/postgres.nim.svg?style=svg)](https://circleci.com/gh/euantorano/postgres.nim)
 
 A PostgreSQL client library for Nim. It features both a synchronous connection and an asynchronous one and aims to work fully with prepared statements.
 
@@ -14,3 +14,5 @@ A PostgreSQL client library for Nim. It features both a synchronous connection a
         - [ ] Queries using `COPY FROM STDIN` or any other type of copy
     - [ ] Prepared statements with bound parameters
 - [ ] Connection pool
+
+## [Documentation](https://htmlpreview.github.io/?https://github.com/euantorano/postgres.nim/blob/master/docs/postgres.html)
