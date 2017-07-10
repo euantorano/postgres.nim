@@ -1,2 +1,8 @@
 nimcache
 nimsuggest.log
+.vscode
+
+# Binaries
+postgres
+*.exe
+tests/main

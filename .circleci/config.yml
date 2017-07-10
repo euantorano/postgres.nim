@@ -20,29 +20,8 @@ jobs:
       - run:
           name: test
           command: nim c -r tests/main.nim
-  build_alpine:
-    working_directory: /usr/src/postgres
-    docker:
-      - image: nimlang/nim:alpine
-      - image: postgres:9.6-alpine
-        environment:
-        - POSTGRES_PASSWORD: password
-    steps:
-      - checkout
-      - run:
-          name: install dockerize
-          command: wget https://github.com/jwilder/dockerize/releases/download/$DOCKERIZE_VERSION/dockerize-linux-amd64-$DOCKERIZE_VERSION.tar.gz && tar -C /usr/local/bin -xzvf dockerize-linux-amd64-$DOCKERIZE_VERSION.tar.gz && rm dockerize-linux-amd64-$DOCKERIZE_VERSION.tar.gz
-          environment:
-            DOCKERIZE_VERSION: v0.3.0
-      - run:
-          name: Wait for db
-          command: dockerize -wait tcp://localhost:5432 -timeout 1m
-      - run:
-          name: test
-          command: nim c -r tests/main.nim
 workflows:
   version: 2
   build_and_test:
     jobs:
       - build
-      - build_alpine
