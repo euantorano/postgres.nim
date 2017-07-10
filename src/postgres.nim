@@ -33,7 +33,7 @@ type
 
   ConnectionClosedError* = object of IOError
 
-  PostgresConnectionError* = ref object of Exception
+  PostgresCommandError* = ref object of Exception
     errorDetails: LogMessage
 
   UnsupportedAuthenticationTypeError* = object of Exception
@@ -86,7 +86,7 @@ proc startup(conn: PostgresConnection | AsyncPostgresConnection, user: string, p
         of BackendMessageType.ErrorResponse:
           await conn.close()
 
-          raise PostgresConnectionError(
+          raise PostgresCommandError(
             errorDetails: packet.error,
             msg: "[" & $packet.error.code & "] " & packet.error.message
           )
@@ -97,11 +97,11 @@ proc startup(conn: PostgresConnection | AsyncPostgresConnection, user: string, p
           case packet.authenticationType
           of AuthenticationType.Ok: discard # Nothing else needed
           of AuthenticationType.CleartextPassword:
-            # TODO: send cleartext password
-            discard
+            let passwordMessage = initCleartextPasswordMessage(password)
+            await conn.sock.send($passwordMessage)
           of AuthenticationType.Md5Password:
-            # TODO: Send MD5 password
-            discard
+            let passwordMessage = initMd5PasswordMessage(password, user, packet.salt)
+            await conn.sock.send($passwordMessage)
           else:
             raise newException(UnsupportedAuthenticationTypeError, "Unsupported authentication type: " & $packet.authenticationType)
         of BackendMessageType.BackendKeyData:
@@ -220,7 +220,7 @@ proc execute*(conn: PostgresConnection | AsyncPostgresConnection, query: string)
   conn.state = ConnectionState.ReadyForQuery
   if isSome(error):
     let errPacket = error.get()
-    raise PostgresConnectionError(
+    raise PostgresCommandError(
       errorDetails: errPacket.error,
       msg: "[" & $errPacket.error.code & "] " & errPacket.error.message
     )
@@ -229,11 +229,11 @@ when isMainModule:
   proc logNotice(notice: PostgresMessage) =
     echo "Received notice from server: [", notice.notice.code, "] ", notice.notice.message
 
-  let conn = open(user = "postgres", database = "docs_nimble_directory", noticeCallback = logNotice)
+  let conn = open(host = "192.168.7.44", user = "postgres", password = "password", database = "test", noticeCallback = logNotice)
   defer: conn.close()
   echo "Opened connection!"
 
-  conn.execute("CREATE TABLE IF NOT EXISTS users (name varchar(255) NOT NULL, age integer NOT NULL);")
+  conn.execute("CREATE TABLE IF NOT EXISTS users (id serial PRIMARY KEY, name varchar(255) NOT NULL, age integer NOT NULL);")
   echo "Created users table!"
 
   let numRowsInsert = conn.execute("INSERT INTO users (name, age) VALUES ('euan', 1);")

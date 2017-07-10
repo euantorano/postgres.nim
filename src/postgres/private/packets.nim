@@ -1,6 +1,6 @@
 ## Packet types and utility functions to read/write them.
 
-from strutils import parseInt
+import strutils, md5
 
 import ./buffer
 
@@ -184,7 +184,10 @@ type
     of true:
       case backendMessageType*: BackendMessageType
       of BackendMessageType.AuthenticationRequest:
-        authenticationType*: AuthenticationType
+        case authenticationType*: AuthenticationType
+        of AuthenticationType.Md5Password:
+          salt*: string
+        else: nil
       of BackendMessageType.BackendKeyData:
         processId*: int32
         secretKey*: int32
@@ -315,6 +318,34 @@ proc startupMessageToString(m: PostgresMessage, dest: var string) {.inline.} =
 
   dest = $buff
 
+proc initCleartextPasswordMessage*(password: string): PostgresMessage =
+  result = PostgresMessage(
+    isBackend: false,
+    frontEndMessageType: FrontEndMessageType.PasswordMessage,
+    password: password
+  )
+
+proc initMd5PasswordMessage*(password: string, user: string, salt: string): PostgresMessage =
+  # The hashed password is as follows: concat('md5', md5(concat(md5(concat(password, username)), random-salt)))
+  let firstStageHash = getMD5(password & user)
+  let secondStageHash = getMd5(firstStageHash & salt)
+
+  result = PostgresMessage(
+    isBackend: false,
+    frontEndMessageType: FrontEndMessageType.PasswordMessage,
+    password: "md5" & secondStageHash
+  )
+
+proc passwordMessageToString(m: PostgresMessage, dest: var string) {.inline.} =
+  let packetLen = int32(4 + len(m.password) + 1)
+  var buff = initBuffer(packetLen)
+
+  buff.writeByte(char(FrontEndMessageType.PasswordMessage))
+  buff.writeInt32(packetLen)
+  buff.writeString(m.password)
+
+  dest = $buff
+
 proc initQueryMessage*(query: string): PostgresMessage =
   result = PostgresMessage(
     isBackend: false,
@@ -350,6 +381,8 @@ proc `$`*(m: PostgresMessage): string =
     case m.frontEndMessageType
     of FrontEndMessageType.Startup:
       startupMessageToString(m, result)
+    of FrontEndMessageType.PasswordMessage:
+      passwordMessageToString(m, result)
     of FrontEndMessageType.Query:
       queryMessageToString(m, result)
     of FrontEndMessageType.Terminate:
@@ -445,13 +478,21 @@ proc parseNoticeResponse(data: string): PostgresMessage {.inline.} =
 
 proc parseAuthenticationRequest(data: string): PostgresMessage {.inline.} =
   var buff = initBuffer(data)
-  let authenticationResponseType = buff.readInt32()
+  let authenticationResponseType = AuthenticationType(buff.readInt32())
 
-  result = PostgresMessage(
-    isBackend: true,
-    backendMessageType: BackendMessageType.AuthenticationRequest,
-    authenticationType: AuthenticationType(authenticationResponseType)
-  )
+  if authenticationResponseType == AuthenticationType.Md5Password:
+    result = PostgresMessage(
+      isBackend: true,
+      backendMessageType: BackendMessageType.AuthenticationRequest,
+      authenticationType: AuthenticationType.Md5Password,
+      salt: buff.readString(4)
+    )
+  else:
+    result = PostgresMessage(
+      isBackend: true,
+      backendMessageType: BackendMessageType.AuthenticationRequest,
+      authenticationType: AuthenticationType(authenticationResponseType)
+    )
 
 proc parseParameterStatus(data: string): PostgresMessage {.inline.} =
   var buff = initBuffer(data)

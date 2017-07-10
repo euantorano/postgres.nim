@@ -32,8 +32,14 @@ proc writeByte*(b: var Buffer, i: uint8 | byte | char) =
   b.buffer[b.writePos] = i
   inc(b.writePos)
 
+proc resizeBufferIfNeeded(b: var Buffer, spaceRequired: int) =
+  if len(b.buffer) < (b.writePos + spaceRequired + 1):
+    setLen(b.buffer, b.writePos + spaceRequired + 1)
+
 proc writeInt32*(b: var Buffer, i: int32)=
   var sourceInt: int32 = i
+
+  b.resizeBufferIfNeeded(sizeof(int32))
 
   bigEndian32(addr b.buffer[b.writePos], addr sourceInt)
   inc(b.writePos, sizeof(int32))
@@ -41,10 +47,14 @@ proc writeInt32*(b: var Buffer, i: int32)=
 proc writeInt16*(b: var Buffer, i: int16) =
   var sourceInt: int16 = i
 
+  b.resizeBufferIfNeeded(sizeof(int16))
+
   bigEndian16(addr b.buffer[b.writePos], addr sourceInt)
   inc(b.writePos, sizeof(int16))
 
 proc writeString*(b: var Buffer, s: string) =
+  b.resizeBufferIfNeeded(len(s))
+
   for i in 0..high(s):
     b.buffer[b.writePos + i] = s[i]
 
@@ -75,3 +85,7 @@ proc readString*(b: var Buffer): string =
       result = b.buffer[b.readPos..i-1]
       b.readPos = i + 1
       return
+
+proc readString*(b: var Buffer, strLen: int): string =
+  result = b.buffer[b.readPos..b.readPos + (strLen - 1)]
+  inc(b.readPos, 4)

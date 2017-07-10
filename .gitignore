@@ -3,3 +3,4 @@ nimcache
 nimcache
 nimsuggest.log
 postgres
+*.exe
