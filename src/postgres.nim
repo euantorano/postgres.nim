@@ -213,7 +213,7 @@ proc execute*(conn: PostgresConnection | AsyncPostgresConnection, query: string)
         else:
           raise newException(UnexpectedPacketError, "Received unexpected packet during query of type: " & $packet.backendMessageType)
       else:
-        raise newException(UnexpectedPacketError, "Received unexpected frontend packet during startup")
+        raise newException(UnexpectedPacketError, "Received unexpected frontend packet during query")
     else:
       await conn.close()
       raise newException(ConnectionClosedError, "Connection to server lost during query")
