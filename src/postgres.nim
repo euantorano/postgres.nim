@@ -8,13 +8,13 @@ export packets
 
 const
   DefaultPort* = Port(5432)
+    ## The default port to conenct to a PostgreSQL server.
 
 type
   ConnectionState {.pure.} = enum
     Disconnected,
     Startup,
-    ReadyForQuery,
-    QueryInProgress
+    ReadyForQuery
 
   NoticeCallbackFunction* = proc(notice: PostgresMessage) {.gcsafe.}
     ## Callback function to handle any notice messages sent by the Postgres server.
@@ -30,21 +30,39 @@ type
     noticeCallback: NoticeCallbackFunction
 
   PostgresConnection* = ref object of PostgresConnectionBase[net.Socket]
+    ## A synchronous connection to a PostgreSQL server.
 
   AsyncPostgresConnection* = ref object of PostgresConnectionBase[AsyncSocket]
+    ## An asynchronous connection to a PostgreSQL server.
+
+  PreparedStatement* = object
+    name: string
+    query: string
 
   ConnectionClosedError* = object of IOError
+    ## Error thrown when the connectin to the PostgreSQL server is detected to have been closed by the server.
 
   PostgresCommandError* = ref object of Exception
-    errorDetails: LogMessage
+    ## Error thrown when an error message is received from the PostgreSQL server.
+    errorDetails*: LogMessage
+      ## Details about the error.
 
   UnsupportedAuthenticationTypeError* = object of Exception
+    ## Error thrown when the PostgreSQL server requests authentication using an unsupported authentication type.
+    ##
+    ## Currently supported authentication types are:
+    ## - None
+    ## - Plaintext Password
+    ## - MD5 Password
 
   UnexpectedPacketError* = object of Exception
+    ## Error thrown when an unexpected packet is received from the PostgreSQL server.
 
   InvalidStateError* = object of Exception
+    ## Error thrown when the connection is determined to be in an invalid state whilst attempting a command.
 
 proc close*(client: PostgresConnection | AsyncPostgresConnection) {.multisync.} =
+  ## Close the connection to the PostgreSQL server, sending a terminate message to close gracefully.
   if client.state != ConnectionState.Disconnected:
     try:
       let terminateMessage = initTerminateMessage()
@@ -124,6 +142,9 @@ proc startup(conn: PostgresConnection | AsyncPostgresConnection, user: string, p
       raise newException(ConnectionClosedError, "Connection to server lost during startup")
 
 proc open*(host = "localhost", port = DefaultPort, user = "postgres", password = "", database = "", noticeCallback: NoticeCallbackFunction = nil): PostgresConnection =
+  ## Open a synchronous connection to the given PostgreSQL server.
+  ##
+  ## You may pass a `noticeCallback`, which will be invoked whenever a notice is received frm the server.
   result = PostgresConnection(
     host: host,
     port: port,
@@ -136,6 +157,9 @@ proc open*(host = "localhost", port = DefaultPort, user = "postgres", password =
   result.startup(user, password, database)
 
 proc openAsync*(host = "localhost", port = DefaultPort, user = "postgres", password = "", database = "", noticeCallback: NoticeCallbackFunction = nil): Future[AsyncPostgresConnection] {.async.} =
+  ## Open an asynchronous connection to the given PostgreSQL server.
+  ##
+  ## You may pass a `noticeCallback`, which will be invoked whenever a notice is received frm the server.
   result = AsyncPostgresConnection(
     host: host,
     port: port,
@@ -165,10 +189,9 @@ proc execute*(conn: PostgresConnection | AsyncPostgresConnection, query: string)
   ## Returns the number of rows affected by the query. In the case that the query contains multiple commands, only the number of rows affected by the first command will be returned.
   ##
   ## Updates, inserts and any other queries with values should use the other versions of this procedure that take a list of parameters.
-  checkState(conn, ConnectionState.ReadyForQuery, "Cannot run query whilst in state: ")
+  checkState(conn, ConnectionState.ReadyForQuery, "Cannot execute command whilst in state: ")
 
   let queryMessage = initQuerymessage(query)
-  conn.state = ConnectionState.QueryInProgress
   await conn.sock.send($queryMessage)
 
   var
@@ -218,10 +241,48 @@ proc execute*(conn: PostgresConnection | AsyncPostgresConnection, query: string)
       await conn.close()
       raise newException(ConnectionClosedError, "Connection to server lost during query")
 
-  conn.state = ConnectionState.ReadyForQuery
   if isSome(error):
     let errPacket = error.get()
     raise PostgresCommandError(
       errorDetails: errPacket.error,
       msg: "[" & $errPacket.error.code & "] " & errPacket.error.message
     )
+
+proc inTransaction*(conn: PostgresConnection | AsyncPostgresConnection): bool =
+  ## Determine whether the connection is currently in a transaction.
+  result = conn.transactionStatus != BackendTransactionStatus.Idle
+
+proc prepare*(conn: PostgresConnection | AsyncPostgresConnection, query: string, name: string = ""): Future[PreparedStatement] {.multisync.} =
+  ## Prepare a query to execute on the connection.
+  checkState(conn, ConnectionState.ReadyForQuery, "Cannot execute command whilst in state: ")
+
+  result = PreparedStatement(
+    name: name,
+    query: query
+  )
+
+  let parseMessage = initParseMessage(name = name, query = query)
+  await conn.sock.send($parseMessage)
+
+  var
+    readPacket: Option[PostgresMessage]
+
+  while true:
+    readPacket = await conn.readPacket()
+
+    if isSome(readPacket):
+      let packet = readPacket.get()
+
+      if packet.isBackend:
+        case packet.backendMessageType
+        of BackendMessageType.ErrorResponse:
+          raise PostgresCommandError(
+            errorDetails: packet.error,
+            msg: "[" & $packet.error.code & "] " & packet.error.message
+          )
+        of BackendMessageType.ParseComplete:
+          break
+        else:
+          raise newException(UnexpectedPacketError, "Received unexpected packet whilst parsing statement of type: " & $packet.backendMessageType)
+      else:
+        raise newException(UnexpectedPacketError, "Received unexpected frontend packet during query")

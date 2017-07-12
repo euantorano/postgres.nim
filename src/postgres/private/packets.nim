@@ -275,7 +275,7 @@ type
         parseDestinationFormatStringName: string
         parseQueryString: string
         parseParameterDataTypesLen: int16
-        parseParameterDataTypeObjectIds: seq[int16]
+        parseParameterDataTypeObjectIds: seq[int32]
       of FrontEndMessageType.Query:
         query: string
       of FrontEndMessageType.Sync: nil
@@ -376,6 +376,35 @@ proc terminateMessageToString(m: PostgresMessage, dest: var string) {.inline.} =
 
   dest = $buff
 
+proc initParseMessage*(name: string, query: string, parameterDataTypes: seq[int32] = nil): PostgresMessage =
+  result = PostgresMessage(
+    isBackend: false,
+    frontEndMessageType: FrontEndMessageType.Parse,
+    parseDestinationFormatStringName: name,
+    parseQueryString: query,
+    parseParameterDataTypesLen: int16(len(parameterDataTypes)),
+    parseParameterDataTypeObjectIds: parameterDataTypes
+  )
+
+proc parseMessageToString(m: PostgresMessage, dest: var string) {.inline.} =
+  let packetLen = int32(4 + 
+    len(m.parseDestinationFormatStringName) + 1 +
+    len(m.parseQueryString) + 1 +
+    sizeof(int16) + 
+    (if m.parseParameterDataTypesLen > 0'i16: m.parseParameterDataTypesLen * 4 else: 0))
+  var buff = initBuffer(packetLen + 1)
+
+  buff.writeByte(char(FrontEndMessageType.Parse))
+  buff.writeInt32(packetLen)
+  buff.writeString(m.parseDestinationFormatStringName)
+  buff.writeString(m.parseQueryString)
+  buff.writeInt16(m.parseParameterDataTypesLen)
+
+  for parameterObjectId in m.parseParameterDataTypeObjectIds:
+    buff.writeInt32(parameterObjectId)
+
+  dest = $buff
+
 proc `$`*(m: PostgresMessage): string =
   if not m.isBackend:
     case m.frontEndMessageType
@@ -387,6 +416,8 @@ proc `$`*(m: PostgresMessage): string =
       queryMessageToString(m, result)
     of FrontEndMessageType.Terminate:
       terminateMessageToString(m, result)
+    of FrontEndMessageType.Parse:
+      parseMessageToString(m, result)
     else:
       result = ""
   else:
@@ -554,6 +585,12 @@ proc parseEmptyQueryResponse(): PostgresMessage {.inline.} =
     backendMessageType: BackendMessageType.EmptyQueryResponse
   )
 
+proc parseParseComplete(): PostgresMessage {.inline.} =
+  result = PostgresMessage(
+    isBackend: true,
+    backendMessageType: BackendMessageType.ParseComplete
+  )
+
 proc fromData*(typ: char, data: string): PostgresMessage =
   case typ
   of char(BackendMessageType.ErrorResponse):
@@ -572,6 +609,8 @@ proc fromData*(typ: char, data: string): PostgresMessage =
     result = parseCommandComplete(data)
   of char(BackendMessageType.EmptyQueryResponse):
     result = parseEmptyQueryResponse()
+  of char(BackendMessageType.ParseComplete):
+    result = parseParseComplete()
   else:
     result = PostgresMessage(
       isBackend: true,

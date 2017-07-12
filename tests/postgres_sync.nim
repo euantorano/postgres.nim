@@ -1,10 +1,14 @@
-import postgres, unittest, terminal
+import postgres, unittest, terminal, os
 
 suite "synchronous tests":
   proc handleNotice(notice: PostgresMessage) =
     styledWriteLine(stdout, fgYellow, "  [NOTICE] ", resetStyle, "[", notice.notice.code, "] ", notice.notice.message)
 
-  let connection = open(user = "postgres", password = "password", database = "postgres", noticeCallback = handleNotice)
+  var host = getEnv("POSTGRES_HOST")
+  if len(host) < 1:
+    host = "localhost"
+
+  let connection = open(host = host, user = "postgres", password = "password", database = "postgres", noticeCallback = handleNotice)
   connection.execute("CREATE TABLE IF NOT EXISTS users (id serial PRIMARY KEY, name varchar(255) NOT NULL, age integer NOT NULL);")
 
   test "insert with raw query":
@@ -14,3 +18,6 @@ suite "synchronous tests":
   test "delete with raw query":
     let affectedRows = connection.execute("DELETE FROM users WHERE name = 'euan';")
     check affectedRows == 1
+
+  test "prepare statement":
+    let prepared = connection.prepare("SELECT * FROM users;")
