@@ -128,9 +128,9 @@ type
       ## 1 indicates the overall copy format is binary (similar to DataRow format).
 
   DescribeType* {.pure.} = enum
-    Portal = 'p'
+    Portal = 'P'
       ## 'P' to describe a portal.
-    PreparedStatement = 's',
+    PreparedStatement = 'S',
       ## 'S' to describe a prepared statement.
 
   BackendTransactionStatus* {.pure.} = enum
@@ -405,6 +405,25 @@ proc parseMessageToString(m: PostgresMessage, dest: var string) {.inline.} =
 
   dest = $buff
 
+proc initDescribeMessage*(describeType: DescribeType = DescribeType.PreparedStatement, name: string = ""): PostgresMessage =
+  result = PostgresMessage(
+    isBackend: false,
+    frontEndMessageType: FrontEndMessageType.Describe,
+    describeType: describeType,
+    nameToDescribe: name
+  )
+
+proc describeMessageToString(m: PostgresMessage, dest: var string) {.inline.} =
+  let packetLen = int32(4 + 1 + len(m.nameToDescribe) + 1)
+  var buff = initBuffer(packetLen + 1)
+
+  buff.writeByte(char(FrontEndMessageType.Describe))
+  buff.writeInt32(packetLen)
+  buff.writeByte(char(m.describeType))
+  buff.writeString(m.nameToDescribe)
+
+  dest = $buff
+
 proc `$`*(m: PostgresMessage): string =
   if not m.isBackend:
     case m.frontEndMessageType
@@ -418,6 +437,8 @@ proc `$`*(m: PostgresMessage): string =
       terminateMessageToString(m, result)
     of FrontEndMessageType.Parse:
       parseMessageToString(m, result)
+    of FrontEndMessageType.Describe:
+      describeMessageToString(m, result)
     else:
       result = ""
   else:
