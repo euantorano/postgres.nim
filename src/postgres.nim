@@ -254,6 +254,10 @@ proc inTransaction*(conn: PostgresConnection | AsyncPostgresConnection): bool =
 
 proc prepare*(conn: PostgresConnection | AsyncPostgresConnection, query: string, name: string = ""): Future[PreparedStatement] {.multisync.} =
   ## Prepare a query to execute on the connection.
+  ##
+  ## The prepared statement will know what type of parameters it takes and what type of result set will be returned.
+  ##
+  ## You should then `bind` some parameters to the statement and execute it.
   checkState(conn, ConnectionState.ReadyForQuery, "Cannot execute command whilst in state: ")
 
   result = PreparedStatement(
@@ -263,6 +267,12 @@ proc prepare*(conn: PostgresConnection | AsyncPostgresConnection, query: string,
 
   let parseMessage = initParseMessage(name = name, query = query)
   await conn.sock.send($parseMessage)
+
+  let describeMessage = initDescribeMessage(DescribeType.PreparedStatement, name)
+  await conn.sock.send($describeMessage)
+
+  let syncMessage = initSyncMessage()
+  await conn.sock.send($syncMessage)
 
   var
     readPacket: Option[PostgresMessage]
@@ -281,6 +291,12 @@ proc prepare*(conn: PostgresConnection | AsyncPostgresConnection, query: string,
             msg: "[" & $packet.error.code & "] " & packet.error.message
           )
         of BackendMessageType.ParseComplete:
+          echo "Got parse complete: ", repr(packet)
+        of BackendMessageType.ParameterDescription:
+          echo "Got parameter description: ", repr(packet)
+        of BackendMessageType.RowDescription:
+          echo "Got row description: ", repr(packet)
+        of BackendMessageType.ReadyForQuery:
           break
         else:
           raise newException(UnexpectedPacketError, "Received unexpected packet whilst parsing statement of type: " & $packet.backendMessageType)

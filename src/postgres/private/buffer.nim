@@ -73,10 +73,16 @@ proc readByte*(b: var Buffer): byte =
   result = byte(b.readChar())
 
 proc readInt32*(b: var Buffer): int32 =
-  var bigEndianVal = b.buffer[b.readPos..sizeof(int32)]
+  var bigEndianVal = b.buffer[b.readPos..b.readPos + sizeof(int32)]
   inc(b.readPos, sizeof(int32))
 
   bigEndian32(addr result, addr bigEndianVal[0])
+
+proc readInt16*(b: var Buffer): int16 =
+  var bigEndianVal = b.buffer[b.readPos..b.readPos + sizeof(int16)]
+  inc(b.readPos, sizeof(int16))
+
+  bigEndian16(addr result, addr bigEndianVal[0])
 
 proc readString*(b: var Buffer): string =
   for i in b.readPos..high(b.buffer):

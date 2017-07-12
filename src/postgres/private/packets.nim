@@ -142,13 +142,13 @@ type
       ## 'T' if in a transaction block.
 
   Field* = object
-    fieldName: string
-    tableObjectId: int32
-    columnAttributeNumber: int16
-    dataType: int32
-    dataTypeSize: int16
-    dataTypeModifier: int32
-    formatCode: FormatCode
+    fieldName*: string
+    tableObjectId*: int32
+    columnAttributeNumber*: int16
+    dataType*: int32
+    dataTypeSize*: int16
+    dataTypeModifier*: int32
+    formatCode*: FormatCode
 
   LogMessageSeverity* {.pure.} = enum
     Error = "ERROR",
@@ -228,7 +228,7 @@ type
         notifyPayload: string
       of BackendMessageType.ParameterDescription:
         parameterDesccriptionCount: int16
-        parameterDataTypeObjectIds: seq[int16]
+        parameterDataTypeObjectIds: seq[int32]
       of BackendMessageType.ParameterStatus:
         parameterName*: string
         parameterValue*: string
@@ -424,6 +424,19 @@ proc describeMessageToString(m: PostgresMessage, dest: var string) {.inline.} =
 
   dest = $buff
 
+proc initSyncMessage*(): PostgresMessage =
+  result = PostgresMessage(
+    isBackend: false,
+    frontEndMessageType: FrontEndMessageType.Sync
+  )
+
+proc syncMessageToString(m: PostgresMessage, dest: var string) {.inline.} =
+  var buff = initBuffer(5)
+  buff.writeByte(char(FrontEndMessageType.Sync))
+  buff.writeint32(4'i32)
+
+  dest = $buff
+
 proc `$`*(m: PostgresMessage): string =
   if not m.isBackend:
     case m.frontEndMessageType
@@ -439,6 +452,8 @@ proc `$`*(m: PostgresMessage): string =
       parseMessageToString(m, result)
     of FrontEndMessageType.Describe:
       describeMessageToString(m, result)
+    of FrontEndMessageType.Sync:
+      syncMessageToString(m, result)
     else:
       result = ""
   else:
@@ -612,6 +627,44 @@ proc parseParseComplete(): PostgresMessage {.inline.} =
     backendMessageType: BackendMessageType.ParseComplete
   )
 
+proc parseParameterDescription(data: string): PostgresMessage {.inline.} =
+  var buff = initBuffer(data)
+  let numParameters = buff.readInt16()
+  var parameters: seq[int32] = newSeqOfCap[int32](int(numParameters))
+  
+  for i in 0..<numParameters:
+    parameters.add(buff.readInt32())
+
+  result = PostgresMessage(
+    isBackend: true,
+    backendMessageType: BackendMessageType.ParameterDescription,
+    parameterDesccriptionCount: numParameters,
+    parameterDataTypeObjectIds: parameters
+  )
+
+proc parseRowDescription(data: string): PostgresMessage {.inline.} =
+  var buff = initBuffer(data)
+  let numFieldsInRow = buff.readInt16()
+  var fields: seq[Field] = newSeqOfCap[Field](int(numFieldsInRow))
+
+  for i in 0..<numFieldsInRow:
+    fields.add(Field(
+      fieldName: buff.readString(),
+      tableObjectId: buff.readInt32(),
+      columnAttributeNumber: buff.readInt16(),
+      dataType: buff.readInt32(),
+      dataTypeSize: buff.readInt16(),
+      dataTypeModifier: buff.readInt32(),
+      formatCode: FormatCode(buff.readInt16())
+    ))
+
+  result = PostgresMessage(
+    isBackend: true,
+    backendMessageType: BackendMessageType.RowDescription,
+    numFieldsInRow: numFieldsInRow,
+    fields: fields
+  )
+
 proc fromData*(typ: char, data: string): PostgresMessage =
   case typ
   of char(BackendMessageType.ErrorResponse):
@@ -632,6 +685,10 @@ proc fromData*(typ: char, data: string): PostgresMessage =
     result = parseEmptyQueryResponse()
   of char(BackendMessageType.ParseComplete):
     result = parseParseComplete()
+  of char(BackendMessageType.ParameterDescription):
+    result = parseParameterDescription(data)
+  of char(BackendMessageType.RowDescription):
+    result = parseRowDescription(data)
   else:
     result = PostgresMessage(
       isBackend: true,
