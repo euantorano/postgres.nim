@@ -8,7 +8,7 @@ export packets
 
 const
   DefaultPort* = Port(5432)
-    ## The default port to conenct to a PostgreSQL server.
+    ## The default port to connect to a PostgreSQL server.
 
 type
   ConnectionState {.pure.} = enum
@@ -273,7 +273,9 @@ proc execute*(conn: PostgresConnection | AsyncPostgresConnection, query: string)
 proc query*(conn: PostgresConnection | AsyncPostgresConnection, query: string): Future[PostgresReader | AsyncPostgresReader] {.multisync.} =
   ## Run an SQL query with no parameters against the connection.
   ##
-  ## Returns a reader that lets you read the result of the query.
+  ## Returns a reader that lets you read the result of the query. The reader should then be ran in a loop reading rows.
+  ##
+  ## If not all rows are read from the result set, you should close the reader. If all rows are read (eg: `read()` returns false), the reader is closed automatically.
   ##
   ## Updates, inserts and any other queries with values should use the other versions of this procedure that take a list of parameters.
   checkState(conn, ConnectionState.ReadyForQuery, "Cannot execute command whilst in state: ")
@@ -369,6 +371,11 @@ proc query*(conn: PostgresConnection | AsyncPostgresConnection, query: string): 
     )
 
 proc read*(reader: PostgresReader | AsyncPostgresReader): Future[bool] {.multisync.} =
+  ## Read the next from from the result set.
+  ##
+  ## Returns true if a row was read. If the end of the result set is reached, returns false.
+  ##
+  ## Columns from the row can be read if the row is read successfully.
   if reader.isComplete:
     return false
 
@@ -411,6 +418,7 @@ proc read*(reader: PostgresReader | AsyncPostgresReader): Future[bool] {.multisy
       raise newException(ConnectionClosedError, "Connection to server lost whilst reading row")
 
 proc close*(reader: PostgresReader | AsyncPostgresReader) {.multisync.} =
+  ## Close the reader, putting the connection back into a state ready to run another query.
   if reader.isComplete:
     return
 
@@ -454,6 +462,7 @@ proc close*(reader: PostgresReader | AsyncPostgresReader) {.multisync.} =
 
 # TODO: Don't always return a string - use Postgres data types
 proc `[]`*(reader: PostgresReader | AsyncPostgresReader, columnName: string): string =
+  ## Get a column's value by name from the current row.
   if reader.isComplete:
     raise newException(InvalidStateError, "Reader has already been completed, cannot get column value")
 
@@ -474,6 +483,7 @@ proc `[]`*(reader: PostgresReader | AsyncPostgresReader, columnName: string): st
   result = currentRow.columns[idx]
 
 proc `[]`*(reader: PostgresReader | AsyncPostgresReader, index: int): string =
+  ## Get a column's value by index from the current row.
   if reader.isComplete:
     raise newException(InvalidStateError, "Reader has already been completed, cannot get column value")
 

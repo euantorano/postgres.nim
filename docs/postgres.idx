@@ -2,12 +2,23 @@ DefaultPort	postgres.html#DefaultPort	postgres : DefaultPort
 NoticeCallbackFunction	postgres.html#NoticeCallbackFunction	postgres : NoticeCallbackFunction	
 PostgresConnection	postgres.html#PostgresConnection	postgres : PostgresConnection	
 AsyncPostgresConnection	postgres.html#AsyncPostgresConnection	postgres : AsyncPostgresConnection	
+PostgresReader	postgres.html#PostgresReader	postgres : PostgresReader	
+AsyncPostgresReader	postgres.html#AsyncPostgresReader	postgres : AsyncPostgresReader	
+PreparedStatement	postgres.html#PreparedStatement	postgres : PreparedStatement	
 ConnectionClosedError	postgres.html#ConnectionClosedError	postgres : ConnectionClosedError	
 PostgresCommandError	postgres.html#PostgresCommandError	postgres : PostgresCommandError	
 UnsupportedAuthenticationTypeError	postgres.html#UnsupportedAuthenticationTypeError	postgres : UnsupportedAuthenticationTypeError	
 UnexpectedPacketError	postgres.html#UnexpectedPacketError	postgres : UnexpectedPacketError	
 InvalidStateError	postgres.html#InvalidStateError	postgres : InvalidStateError	
+UnknownColumnError	postgres.html#UnknownColumnError	postgres : UnknownColumnError	
 close	postgres.html#close,	postgres : close*(client: PostgresConnection | AsyncPostgresConnection)	
 open	postgres.html#open,NoticeCallbackFunction	postgres : open*(host = &quot;localhost&quot;; port = DefaultPort; user = &quot;postgres&quot;; password = &quot;&quot;;\n      database = &quot;&quot;; noticeCallback: NoticeCallbackFunction = nil): PostgresConnection	
 openAsync	postgres.html#openAsync,NoticeCallbackFunction	postgres : openAsync*(host = &quot;localhost&quot;; port = DefaultPort; user = &quot;postgres&quot;; password = &quot;&quot;;\n           database = &quot;&quot;; noticeCallback: NoticeCallbackFunction = nil): Future[\n    AsyncPostgresConnection]	
 execute	postgres.html#execute,,string	postgres : execute*(conn: PostgresConnection | AsyncPostgresConnection; query: string): Future[\n    BiggestInt]	
+query	postgres.html#query,,string	postgres : query*(conn: PostgresConnection | AsyncPostgresConnection; query: string): Future[\n    PostgresReader | AsyncPostgresReader]	
+read	postgres.html#read,	postgres : read*(reader: PostgresReader | AsyncPostgresReader): Future[bool]	
+close	postgres.html#close,_2	postgres : close*(reader: PostgresReader | AsyncPostgresReader)	
+`[]`	postgres.html#[],,string	postgres : `[]`*(reader: PostgresReader | AsyncPostgresReader; columnName: string): string	
+`[]`	postgres.html#[],,int	postgres : `[]`*(reader: PostgresReader | AsyncPostgresReader; index: int): string	
+inTransaction	postgres.html#inTransaction,	postgres : inTransaction*(conn: PostgresConnection | AsyncPostgresConnection): bool	
+prepare	postgres.html#prepare,,string,string	postgres : prepare*(conn: PostgresConnection | AsyncPostgresConnection; query: string;\n         name: string = &quot;&quot;): Future[PreparedStatement]	
