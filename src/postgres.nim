@@ -1,6 +1,6 @@
 ## A PostgreSQL client library for Nim.
 
-import net, asyncdispatch, asyncnet, options, strutils
+import net, asyncdispatch, asyncnet, options, strutils, tables
 
 import postgres/private/[packets, buffer]
 
@@ -14,12 +14,15 @@ type
   ConnectionState {.pure.} = enum
     Disconnected,
     Startup,
-    ReadyForQuery
+    ReadyForQuery,
+    InQuery,
+    ReadingRows,
+    PreparingStatement
 
   NoticeCallbackFunction* = proc(notice: PostgresMessage) {.gcsafe.}
     ## Callback function to handle any notice messages sent by the Postgres server.
 
-  PostgresConnectionBase[TSocket] = object of RootObj
+  PostgresConnectionBase[TSocket] = ref object of RootObj
     host: string
     port: Port
     sock: TSocket
@@ -34,6 +37,19 @@ type
 
   AsyncPostgresConnection* = ref object of PostgresConnectionBase[AsyncSocket]
     ## An asynchronous connection to a PostgreSQL server.
+
+  PostgresReaderBase[TConnection] = object of RootObj
+    connection: TConnection
+    fieldNamesToIndexes: TableRef[string, int]
+      ## Maps field names to their positions
+    numRows*: BiggestInt
+    isComplete*: bool
+    currentRow: Option[PostgresMessage]
+    ## TODO: Map of fields to their types
+
+  PostgresReader* = ref object of PostgresReaderBase[PostgresConnection]
+
+  AsyncPostgresReader* = ref object of PostgresReaderBase[AsyncPostgresConnection]
 
   PreparedStatement* = object
     name: string
@@ -60,6 +76,9 @@ type
 
   InvalidStateError* = object of Exception
     ## Error thrown when the connection is determined to be in an invalid state whilst attempting a command.
+
+  UnknownColumnError* = object of Exception
+    ## Error thrown when an unknown column is attempted to be retrieved from a reader.
 
 proc close*(client: PostgresConnection | AsyncPostgresConnection) {.multisync.} =
   ## Close the connection to the PostgreSQL server, sending a terminate message to close gracefully.
@@ -133,6 +152,8 @@ proc startup(conn: PostgresConnection | AsyncPostgresConnection, user: string, p
           conn.state = ConnectionState.ReadyForQuery
           conn.transactionStatus = packet.backendTransactionStatus
           return
+        of BackendMessageType.Unknown:
+          raise newException(UnexpectedPacketError, "Received unknown packet during startup with identifier: " & $packet.messageTypeIdentifier)
         else:
           raise newException(UnexpectedPacketError, "Received unexpected packet during startup of type: " & $packet.backendMessageType)
       else:
@@ -194,6 +215,8 @@ proc execute*(conn: PostgresConnection | AsyncPostgresConnection, query: string)
   let queryMessage = initQuerymessage(query)
   await conn.sock.send($queryMessage)
 
+  conn.state = ConnectionState.InQuery
+
   var
     readPacket: Option[PostgresMessage]
     error: Option[PostgresMessage] = none(PostgresMessage)
@@ -230,9 +253,104 @@ proc execute*(conn: PostgresConnection | AsyncPostgresConnection, query: string)
         of BackendMessageType.NoticeResponse:
           if not isNil(conn.noticeCallback):
             conn.noticeCallback(packet)
+        of BackendMessageType.RowDescription: discard
+        of BackendMessageType.ParameterDescription: discard
+        of BackendMessageType.DataRow: discard
         of BackendMessageType.ReadyForQuery:
           # We always get a ready for query packet to end the query - even if there was an error
+          conn.state = ConnectionState.ReadyForQuery
           break
+        of BackendMessageType.Unknown:
+          raise newException(UnexpectedPacketError, "Received unknown packet during query with identifier: " & $packet.messageTypeIdentifier)
+        else:
+          raise newException(UnexpectedPacketError, "Received unexpected packet during query of type: " & $packet.backendMessageType)
+      else:
+        raise newException(UnexpectedPacketError, "Received unexpected frontend packet during ")
+    else:
+      await conn.close()
+      raise newException(ConnectionClosedError, "Connection to server lost during query")
+
+proc query*(conn: PostgresConnection | AsyncPostgresConnection, query: string): Future[PostgresReader | AsyncPostgresReader] {.multisync.} =
+  ## Run an SQL query with no parameters against the connection.
+  ##
+  ## Returns a reader that lets you read the result of the query.
+  ##
+  ## Updates, inserts and any other queries with values should use the other versions of this procedure that take a list of parameters.
+  checkState(conn, ConnectionState.ReadyForQuery, "Cannot execute command whilst in state: ")
+
+  let queryMessage = initQuerymessage(query)
+  await conn.sock.send($queryMessage)
+
+  conn.state = ConnectionState.InQuery
+
+  when conn is PostgresConnection:
+    result = PostgresReader(
+      connection: conn,
+      fieldNamesToIndexes: newTable[string, int](),
+      isComplete: false,
+      currentRow: none(PostgresMessage)
+    )
+  else:
+    result = AsyncPostgresReader(
+      connection: conn,
+      fieldNamesToIndexes: newTable[string, int](),
+      isComplete: false,
+      currentRow: none(PostgresMessage)
+    )
+
+  var
+    readPacket: Option[PostgresMessage]
+    error: Option[PostgresMessage] = none(PostgresMessage)
+    hasNumRows = false
+
+  while true:
+    readPacket = await conn.readPacket()
+
+    if isSome(readPacket):
+      let packet = readPacket.get()
+
+      if packet.isBackend:
+        case packet.backendMessageType
+        of BackendMessageType.CommandComplete:
+          if len(packet.commandTag) > 0 and not hasNumRows:
+            # Check that the command tag is a command tag that has rows
+            if len(packet.commandTag) > 9 and packet.commandTag[0..5] == "INSERT":
+              tryParseNumRows(packet.commandTag, 9, hasNumRows, result.numRows)
+            elif len(packet.commandTag) > 7 and packet.commandTag[0..5] == "DELETE":
+              tryParseNumRows(packet.commandTag, 7, hasNumRows, result.numRows)
+            elif len(packet.commandTag) > 7 and packet.commandTag[0..5] == "UPDATE":
+              tryParseNumRows(packet.commandTag, 7, hasNumRows, result.numRows)
+            elif len(packet.commandTag) > 7 and packet.commandTag[0..5] == "SELECT":
+              tryParseNumRows(packet.commandTag, 7, hasNumRows, result.numRows)
+            elif len(packet.commandTag) > 5 and packet.commandTag[0..3] == "MOVE":
+              tryParseNumRows(packet.commandTag, 5, hasNumRows, result.numRows)
+            elif len(packet.commandTag) > 6 and packet.commandTag[0..4] == "FETCH":
+              tryParseNumRows(packet.commandTag, 6, hasNumRows, result.numRows)
+            elif len(packet.commandTag) > 5 and packet.commandTag[0..3] == "COPY":
+              tryParseNumRows(packet.commandTag, 5, hasNumRows, result.numRows)
+        of BackendMessageType.EmptyQueryResponse: discard # Empty query, no need to do anything
+        of BackendMessageType.ErrorResponse:
+          error = some(packet)
+        of BackendMessageType.NoticeResponse:
+          if not isNil(conn.noticeCallback):
+            conn.noticeCallback(packet)
+        of BackendMessageType.RowDescription:
+          var idx: int = 0
+
+          for field in packet.fields:
+            result.fieldNamesToIndexes.add(field.fieldName, idx)
+            inc(idx)
+
+          # Next come the data rows
+          conn.state = ConnectionState.ReadingRows
+          break
+        of BackendMessageType.ReadyForQuery:
+          # We always get a ready for query packet to end the query - even if there was an error
+          conn.state = ConnectionState.ReadyForQuery
+          result.isComplete = true
+          break
+        of BackendMessageType.Unknown:
+          raise newException(UnexpectedPacketError, "Received unknown packet during query with identifier: " & $packet.messageTypeIdentifier)
         else:
           raise newException(UnexpectedPacketError, "Received unexpected packet during query of type: " & $packet.backendMessageType)
       else:
@@ -247,6 +365,108 @@ proc execute*(conn: PostgresConnection | AsyncPostgresConnection, query: string)
       errorDetails: errPacket.error,
       msg: "[" & $errPacket.error.code & "] " & errPacket.error.message
     )
+
+proc read*(reader: PostgresReader | AsyncPostgresReader): Future[bool] {.multisync.} =
+  if reader.isComplete:
+    return false
+
+  var
+    readPacket: Option[PostgresMessage]
+
+  while true:
+    readPacket = await reader.connection.readPacket()
+
+    if isSome(readPacket):
+      let packet = readPacket.get()
+
+      if packet.isBackend:
+        case packet.backendMessageType
+        of BackendMessageType.DataRow:
+          reader.currentRow = some(packet)
+
+          return true
+        of BackendMessageType.CommandComplete: discard
+        of BackendMessageType.ReadyForQuery:
+          reader.isComplete = true
+          reader.connection.state = ConnectionState.ReadyForQuery
+
+          return false
+
+        of BackendMessageType.ErrorResponse:
+          raise PostgresCommandError(
+            errorDetails: packet.error,
+            msg: "[" & $packet.error.code & "] " & packet.error.message
+          )
+        of BackendMessageType.NoticeResponse:
+          if not isNil(reader.connection.noticeCallback):
+            reader.connection.noticeCallback(packet)
+        else:
+          raise newException(UnexpectedPacketError, "Received unexpected packet whilst reading row of type: " & $packet.backendMessageType)
+      else:
+        raise newException(UnexpectedPacketError, "Received unexpected frontend packet whilst reading row")
+    else:
+      await reader.connection.close()
+      raise newException(ConnectionClosedError, "Connection to server lost whilst reading row")
+
+proc close*(reader: PostgresReader | AsyncPostgresReader) {.multisync.} =
+  if reader.isComplete:
+    return
+
+  var
+    readPacket: Option[PostgresMessage]
+    error: Option[PostgresMessage] = none(PostgresMessage)
+
+  while true:
+    readPacket = await reader.connection.readPacket()
+
+    if isSome(readPacket):
+      let packet = readPacket.get()
+
+      if packet.isBackend:
+        case packet.backendMessageType
+        of BackendMessageType.DataRow: discard
+        of BackendMessageType.CommandComplete: discard
+        of BackendMessageType.ReadyForQuery:
+          reader.isComplete = true
+          reader.connection.state = ConnectionState.ReadyForQuery
+
+          break
+        of BackendMessageType.ErrorResponse:
+          error = some(packet)
+        of BackendMessageType.NoticeResponse:
+          if not isNil(reader.connection.noticeCallback):
+            reader.connection.noticeCallback(packet)
+        else: discard
+      else:
+        raise newException(UnexpectedPacketError, "Received unexpected frontend packet whilst closing reader")
+    else:
+      await reader.connection.close()
+      raise newException(ConnectionClosedError, "Connection to server lost whilst closing reader")
+
+  if isSome(error):
+    let errPacket = error.get()
+    raise PostgresCommandError(
+      errorDetails: errPacket.error,
+      msg: "[" & $errPacket.error.code & "] " & errPacket.error.message
+    )
+
+# TODO: Don't always return a string - use Postgres data types
+proc `[]`*(reader: PostgresReader | AsyncPostgresReader, columnName: string): string =
+  if reader.isComplete:
+    raise newException(InvalidStateError, "Reader has already been completed, cannot get column value")
+
+  if isNone(reader.currentRow):
+    raise newException(InvalidStateError, "Reader must read a row before getting a column value")
+
+  if not reader.fieldNamesToIndexes.hasKey(columnName):
+    raise newException(UnknownColumnError, "Unknown column: " & columnName)
+
+  let idx = reader.fieldNamesToIndexes[columnName]
+  let currentRow = reader.currentRow.get()
+  if len(currentRow.columns) - 1 < idx:
+    raise newException(UnknownColumnError, "Unknown column: " & columnName)
+
+  result = currentRow.columns[idx]
 
 proc inTransaction*(conn: PostgresConnection | AsyncPostgresConnection): bool =
   ## Determine whether the connection is currently in a transaction.
@@ -274,6 +494,8 @@ proc prepare*(conn: PostgresConnection | AsyncPostgresConnection, query: string,
   let syncMessage = initSyncMessage()
   await conn.sock.send($syncMessage)
 
+  conn.state = ConnectionState.PreparingStatement
+
   var
     readPacket: Option[PostgresMessage]
 
@@ -290,14 +512,14 @@ proc prepare*(conn: PostgresConnection | AsyncPostgresConnection, query: string,
             errorDetails: packet.error,
             msg: "[" & $packet.error.code & "] " & packet.error.message
           )
-        of BackendMessageType.ParseComplete:
-          echo "Got parse complete: ", repr(packet)
-        of BackendMessageType.ParameterDescription:
-          echo "Got parameter description: ", repr(packet)
-        of BackendMessageType.RowDescription:
-          echo "Got row description: ", repr(packet)
+        of BackendMessageType.ParseComplete: discard
+        of BackendMessageType.ParameterDescription: discard
+        of BackendMessageType.RowDescription: discard
         of BackendMessageType.ReadyForQuery:
+          conn.state = ConnectionState.ReadyForQuery
           break
+        of BackendMessageType.Unknown:
+          raise newException(UnexpectedPacketError, "Received unknown packet during prepare with identifier: " & $packet.messageTypeIdentifier)
         else:
           raise newException(UnexpectedPacketError, "Received unexpected packet whilst parsing statement of type: " & $packet.backendMessageType)
       else:

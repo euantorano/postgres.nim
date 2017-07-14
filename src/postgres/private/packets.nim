@@ -211,8 +211,8 @@ type
         numColumnsToCopyBoth: int16
         copyBothFormatCodes: seq[FormatCode]
       of BackendMessageType.DataRow:
-        numColumns: int16
-        columns: seq[string]
+        numColumns*: int16
+        columns*: seq[string]
       of BackendMessageType.EmptyQueryResponse: nil
       of BackendMessageType.ErrorResponse:
         error*: LogMessage
@@ -237,8 +237,10 @@ type
       of BackendMessageType.ReadyForQuery:
         backendTransactionStatus*: BackendTransactionStatus
       of BackendMessageType.RowDescription:
-        numFieldsInRow: int16
-        fields: seq[Field]
+        numFieldsInRow*: int16
+        fields*: seq[Field]
+      of BackendMessageType.Unknown:
+        messageTypeIdentifier*: char
       else: nil
     of false:
       case frontendMessageType*: FrontEndMessageType
@@ -665,6 +667,34 @@ proc parseRowDescription(data: string): PostgresMessage {.inline.} =
     fields: fields
   )
 
+proc parseDataRow(data: string): PostgresMessage {.inline.} =
+  var buff = initBuffer(data)
+  let numColumns = buff.readInt16()
+  var columns = newSeq[string]()
+
+  if numColumns > 0:
+    var
+      columnLength: int32
+      columnData: string
+
+    for i in 0..<numColumns:
+      columnLength = buff.readInt32()
+      if columnLength == -1:
+        columnData = nil
+      elif columnLength == 0:
+        columnData = ""
+      else:
+        columnData = buff.readString(columnLength)
+
+      columns.add(columnData)
+
+  result = PostgresMessage(
+    isBackend: true,
+    backendMessageType: BackendMessageType.DataRow,
+    numColumns: numColumns,
+    columns: columns
+  )
+
 proc fromData*(typ: char, data: string): PostgresMessage =
   case typ
   of char(BackendMessageType.ErrorResponse):
@@ -689,8 +719,11 @@ proc fromData*(typ: char, data: string): PostgresMessage =
     result = parseParameterDescription(data)
   of char(BackendMessageType.RowDescription):
     result = parseRowDescription(data)
+  of char(BackendMessageType.DataRow):
+    result = parseDataRow(data)
   else:
     result = PostgresMessage(
       isBackend: true,
-      backendMessageType: BackendMessageType.Unknown
+      backendMessageType: BackendMessageType.Unknown,
+      messageTypeIdentifier: typ
     )
