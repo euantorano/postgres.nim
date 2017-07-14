@@ -286,14 +286,14 @@ proc query*(conn: PostgresConnection | AsyncPostgresConnection, query: string): 
   when conn is PostgresConnection:
     result = PostgresReader(
       connection: conn,
-      fieldNamesToIndexes: newTable[string, int](),
+      fieldNamesToIndexes: nil,
       isComplete: false,
       currentRow: none(PostgresMessage)
     )
   else:
     result = AsyncPostgresReader(
       connection: conn,
-      fieldNamesToIndexes: newTable[string, int](),
+      fieldNamesToIndexes: nil,
       isComplete: false,
       currentRow: none(PostgresMessage)
     )
@@ -336,6 +336,8 @@ proc query*(conn: PostgresConnection | AsyncPostgresConnection, query: string): 
             conn.noticeCallback(packet)
         of BackendMessageType.RowDescription:
           var idx: int = 0
+
+          result.fieldNamesToIndexes = newTable[string, int](rightSize(packet.numFieldsInRow))
 
           for field in packet.fields:
             result.fieldNamesToIndexes.add(field.fieldName, idx)
@@ -455,6 +457,9 @@ proc `[]`*(reader: PostgresReader | AsyncPostgresReader, columnName: string): st
   if reader.isComplete:
     raise newException(InvalidStateError, "Reader has already been completed, cannot get column value")
 
+  if isNil(reader.fieldNamesToIndexes):
+    raise newException(InvalidStateError, "Reader cannot map field names to indexes, as now row descrition message was received from the server")
+
   if isNone(reader.currentRow):
     raise newException(InvalidStateError, "Reader must read a row before getting a column value")
 
@@ -467,6 +472,19 @@ proc `[]`*(reader: PostgresReader | AsyncPostgresReader, columnName: string): st
     raise newException(UnknownColumnError, "Unknown column: " & columnName)
 
   result = currentRow.columns[idx]
+
+proc `[]`*(reader: PostgresReader | AsyncPostgresReader, index: int): string =
+  if reader.isComplete:
+    raise newException(InvalidStateError, "Reader has already been completed, cannot get column value")
+
+  if isNone(reader.currentRow):
+    raise newException(InvalidStateError, "Reader must read a row before getting a column value")
+
+  let currentRow = reader.currentRow.get()
+  if len(currentRow.columns) - 1 < index:
+    raise newException(UnknownColumnError, "Unknown column with index: " & $index)
+
+  result = currentRow.columns[index]
 
 proc inTransaction*(conn: PostgresConnection | AsyncPostgresConnection): bool =
   ## Determine whether the connection is currently in a transaction.

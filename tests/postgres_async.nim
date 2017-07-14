@@ -20,7 +20,7 @@ suite "asynchronous tests":
     check affectedRows == 1
 
   test "select with raw query":
-    let reader = waitFor connection.query("SELECT * FROM users;")
+    let reader = waitFor connection.query("SELECT name, age FROM users;")
     defer: waitFor reader.close()
 
     var
@@ -28,6 +28,7 @@ suite "asynchronous tests":
       age: string
       numRows: int = 0
     while waitFor reader.read():
+      check reader[0] == reader["name"]
       name = reader["name"]
       age = reader["age"]
       inc(numRows)

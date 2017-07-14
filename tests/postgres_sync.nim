@@ -20,7 +20,7 @@ suite "synchronous tests":
     check affectedRows == 1
 
   test "select with raw query":
-    let reader = connection.query("SELECT * FROM users;")
+    let reader = connection.query("SELECT name, age FROM users;")
     defer: reader.close()
 
     var
@@ -28,6 +28,7 @@ suite "synchronous tests":
       age: string
       numRows: int = 0
     while reader.read():
+      check reader[0] == reader["name"]
       name = reader["name"]
       age = reader["age"]
       inc(numRows)
