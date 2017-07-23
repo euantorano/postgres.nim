@@ -6,3 +6,4 @@ nimsuggest.log
 postgres
 *.exe
 tests/main
+tools/generate_oids

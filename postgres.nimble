@@ -12,13 +12,7 @@ srcDir = "src"
 requires "nim >= 0.17.0"
 
 task oids, "Fetch a list of OIDs from Postgres":
-  mkDir("resources")
-  when defined(posix):
-    exec "./get_oids.sh"
-  elif defined(windows):
-    hint "Using Windows script"
-  else:
-    warning "Unsupported OS, cannot generate list of OIDs"
+  exec "nim c -r tools/generate_oids.nim"
 
 task docs, "Build documentation":
   exec "nim doc --index:on -o:docs/postgres.html src/postgres.nim"

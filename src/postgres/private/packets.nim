@@ -2,7 +2,7 @@
 
 import strutils, md5
 
-import ./buffer
+import ./buffer, ./oids
 
 const
   DefaultProtocolVersionNumber = 196608'i32
@@ -145,7 +145,7 @@ type
     fieldName*: string
     tableObjectId*: int32
     columnAttributeNumber*: int16
-    dataType*: int32
+    dataType*: Oid
     dataTypeSize*: int16
     dataTypeModifier*: int32
     formatCode*: FormatCode
@@ -228,7 +228,7 @@ type
         notifyPayload: string
       of BackendMessageType.ParameterDescription:
         parameterDesccriptionCount: int16
-        parameterDataTypeObjectIds: seq[int32]
+        parameterDataTypeObjectIds: seq[Oid]
       of BackendMessageType.ParameterStatus:
         parameterName*: string
         parameterValue*: string
@@ -277,7 +277,7 @@ type
         parseDestinationFormatStringName: string
         parseQueryString: string
         parseParameterDataTypesLen: int16
-        parseParameterDataTypeObjectIds: seq[int32]
+        parseParameterDataTypeObjectIds: seq[Oid]
       of FrontEndMessageType.Query:
         query: string
       of FrontEndMessageType.Sync: nil
@@ -378,7 +378,7 @@ proc terminateMessageToString(m: PostgresMessage, dest: var string) {.inline.} =
 
   dest = $buff
 
-proc initParseMessage*(name: string, query: string, parameterDataTypes: seq[int32] = nil): PostgresMessage =
+proc initParseMessage*(name: string, query: string, parameterDataTypes: seq[Oid] = nil): PostgresMessage =
   result = PostgresMessage(
     isBackend: false,
     frontEndMessageType: FrontEndMessageType.Parse,
@@ -389,10 +389,10 @@ proc initParseMessage*(name: string, query: string, parameterDataTypes: seq[int3
   )
 
 proc parseMessageToString(m: PostgresMessage, dest: var string) {.inline.} =
-  let packetLen = int32(4 + 
+  let packetLen = int32(4 +
     len(m.parseDestinationFormatStringName) + 1 +
     len(m.parseQueryString) + 1 +
-    sizeof(int16) + 
+    sizeof(int16) +
     (if m.parseParameterDataTypesLen > 0'i16: m.parseParameterDataTypesLen * 4 else: 0))
   var buff = initBuffer(packetLen + 1)
 
@@ -403,7 +403,7 @@ proc parseMessageToString(m: PostgresMessage, dest: var string) {.inline.} =
   buff.writeInt16(m.parseParameterDataTypesLen)
 
   for parameterObjectId in m.parseParameterDataTypeObjectIds:
-    buff.writeInt32(parameterObjectId)
+    buff.writeInt32(int32(parameterObjectId))
 
   dest = $buff
 
@@ -632,10 +632,10 @@ proc parseParseComplete(): PostgresMessage {.inline.} =
 proc parseParameterDescription(data: string): PostgresMessage {.inline.} =
   var buff = initBuffer(data)
   let numParameters = buff.readInt16()
-  var parameters: seq[int32] = newSeqOfCap[int32](int(numParameters))
-  
+  var parameters: seq[Oid] = newSeqOfCap[Oid](int(numParameters))
+
   for i in 0..<numParameters:
-    parameters.add(buff.readInt32())
+    parameters.add(Oid(buff.readInt32()))
 
   result = PostgresMessage(
     isBackend: true,
@@ -654,7 +654,7 @@ proc parseRowDescription(data: string): PostgresMessage {.inline.} =
       fieldName: buff.readString(),
       tableObjectId: buff.readInt32(),
       columnAttributeNumber: buff.readInt16(),
-      dataType: buff.readInt32(),
+      dataType: Oid(buff.readInt32()),
       dataTypeSize: buff.readInt16(),
       dataTypeModifier: buff.readInt32(),
       formatCode: FormatCode(buff.readInt16())
